@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Gradient definitions -->
+  <defs>
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#151a30" />
+      <stop offset="70%" stop-color="#14B8A6" />
+      <stop offset="100%" stop-color="#4e43e0" />
+    </linearGradient>
+    <linearGradient id="shineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="white" stop-opacity="0.3" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Main circle background with gradient -->
+  <circle cx="100" cy="100" r="95" fill="url(#mainGradient)" />
+  
+  <!-- Outer ring -->
+  <circle cx="100" cy="100" r="95" fill="none" stroke="white" stroke-width="1.5" stroke-opacity="0.6" />
+  
+  <!-- Infinity symbol for continuity and never giving up -->
+  <path d="M100,115 C130,85 160,85 160,115 C160,145 130,145 100,115 C70,145 40,145 40,115 C40,85 70,85 100,115 Z" 
+        fill="none" stroke="white" stroke-width="3" stroke-opacity="0.8" />
+  
+  <!-- Ascending steps for productivity and progress -->
+  <path d="M70,130 L85,130 L85,125 L100,125 L100,120 L115,120 L115,115 L130,115" 
+        fill="none" stroke="white" stroke-width="2" stroke-opacity="0.7" />
+  
+  <!-- Digital connections -->
+  <path d="M60,95 Q100,65 140,95" fill="none" stroke="white" stroke-width="1.2" stroke-opacity="0.8" />
+  <path d="M60,105 Q100,135 140,105" fill="none" stroke="white" stroke-width="1.2" stroke-opacity="0.8" />
+  
+  <!-- Connection nodes -->
+  <circle cx="60" cy="95" r="3" fill="white" />
+  <circle cx="60" cy="105" r="3" fill="white" />
+  <circle cx="100" cy="65" r="3" fill="white" />
+  <circle cx="100" cy="135" r="3" fill="white" />
+  <circle cx="140" cy="95" r="3" fill="white" />
+  <circle cx="140" cy="105" r="3" fill="white" />
+  
+  <!-- Shine effect for professional look -->
+  <path d="M60,60 Q100,20 140,60" fill="none" stroke="url(#shineGradient)" stroke-width="6" stroke-opacity="0.5" />
+  
+  <!-- Continuous orbit rings -->
+  <circle cx="100" cy="100" r="70" fill="none" stroke="white" stroke-width="0.8" stroke-opacity="0.5" />
+  <circle cx="100" cy="100" r="80" fill="none" stroke="white" stroke-width="0.5" stroke-opacity="0.3" />
+  
+  <!-- Stylish text elements with professional font -->
+  <text x="100" y="72" font-family="'Segoe UI', Helvetica, sans-serif" font-weight="600" font-size="18" fill="white" text-anchor="middle" letter-spacing="1">SLOOPIFY</text>
+  <text x="100" y="155" font-family="'Segoe UI', Helvetica, sans-serif" font-weight="300" font-size="8" fill="white" text-anchor="middle" letter-spacing="2">AI-POWERED NETWORKING</text>
+</svg>

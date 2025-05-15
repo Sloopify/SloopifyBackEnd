@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
+  <!-- Background Circle -->
+  <circle cx="250" cy="250" r="240" fill="#151a30" />
+  <circle cx="250" cy="250" r="220" fill="#1e2442" />
+  
+  <!-- Glowing Ring -->
+  <circle cx="250" cy="250" r="200" fill="none" stroke="#4e43e0" stroke-width="4" stroke-opacity="0.7" />
+  <circle cx="250" cy="250" r="200" fill="none" stroke="#65fcdb" stroke-width="2" stroke-opacity="0.5" />
+  
+  <!-- Circuit Pattern -->
+  <path d="M150 250 L100 250 L100 180 L160 180" fill="none" stroke="#65fcdb" stroke-width="2" stroke-opacity="0.6" />
+  <path d="M350 250 L400 250 L400 320 L340 320" fill="none" stroke="#65fcdb" stroke-width="2" stroke-opacity="0.6" />
+  <path d="M250 150 L250 100 L320 100 L320 160" fill="none" stroke="#4e43e0" stroke-width="2" stroke-opacity="0.6" />
+  <path d="M250 350 L250 400 L180 400 L180 340" fill="none" stroke="#4e43e0" stroke-width="2" stroke-opacity="0.6" />
+  
+  <!-- Central "S" -->
+  <path d="M220 175 C180 175, 180 225, 220 225 L280 225 C320 225, 320 275, 280 275 L220 275" 
+        fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" />
+  
+  <!-- "SubZone" Text -->
+  <text x="250" y="340" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="#ffffff" text-anchor="middle">SUBZONE</text>
+  
+  <!-- Controller Icon -->
+  <circle cx="250" cy="200" r="12" fill="#65fcdb" />
+  <circle cx="250" cy="250" r="12" fill="#4e43e0" />
+  
+  <!-- Game Lines -->
+  <line x1="150" y1="175" x2="180" y2="175" stroke="#4e43e0" stroke-width="3" />
+  <line x1="320" y1="275" x2="350" y2="275" stroke="#65fcdb" stroke-width="3" />
+</svg>
