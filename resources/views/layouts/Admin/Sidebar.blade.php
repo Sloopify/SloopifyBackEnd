@@ -18,7 +18,17 @@
     <div class="app-brand demo">
         <a href="{{ route('dashboard') }}" class="app-brand-link">
             <span class="app-brand-logo demo">
-                <img src="{{ asset('dashboard_assets/assets/img/sidebar/sloopify-logo.svg') }}" alt="Logo" width="150px" height="150px" style="padding-top: 45px ; padding-bottom: 45px ; padding-left: 40px" >
+                @php
+                    // Fetch the sidebar logo from settings, fallback to default if not set
+                    $sidebarLogo = \App\Models\Setting::where('key', 'sidebar_logo')->value('value');
+                @endphp
+                <img 
+                    src="{{ $sidebarLogo ? asset($sidebarLogo) : asset('dashboard_assets/assets/img/sidebar/sloopify-logo.svg') }}" 
+                    alt="Logo" 
+                    width="150px" 
+                    height="150px" 
+                    style="padding-top: 45px ; padding-bottom: 45px ; padding-left: 40px"
+                >
             </span>
         </a>
 
@@ -73,6 +83,14 @@
             <a href="{{ route('admin.profile.index') }}" class="menu-link">
                 <i class="menu-icon tf-icons bx bx-user-circle"></i>
                 <div data-i18n="Profile">My Profile</div>
+            </a>
+        </li>
+
+        <!-- Settings Menu Item -->
+        <li class="menu-item {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">
+            <a href="{{ route('admin.settings.index') }}" class="menu-link">
+                <i class="menu-icon tf-icons bx bx-cog"></i>
+                <div data-i18n="Settings">Settings</div>
             </a>
         </li>
     </ul>

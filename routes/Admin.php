@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\admin\Admin\AdminController as AdminAdminController;
 use App\Http\Controllers\admin\Admin\Role\RoleController;
 use App\Http\Controllers\Admin\ProfileController;
+use App\Http\Controllers\Admin\Setting\SettingController;
 
 
 Route::get('/login' , [AuthController::class , 'loginPage'])->name('login.page');
@@ -64,6 +65,17 @@ Route::group(['middleware' => ['admin.auth']], function () {
             Route::get('/export', 'export')->name('export');
         });
 
+    });
+
+    Route::group(['prefix' => 'settings', 'as' => 'settings.', 'controller' => SettingController::class], function () {
+
+        Route::get('/index', 'index')->name('index');
+        
+        Route::post('/update', 'update')->name('update');
+        
+        Route::post('/toggle-value', 'toggleValue')->name('toggle.value');
+        
+        Route::post('/update-description', 'updateDescription')->name('update.description');
     });
 
 });
