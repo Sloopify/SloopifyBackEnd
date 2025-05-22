@@ -55,4 +55,10 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function userInterests()
+    {
+        return $this->hasMany(UserInterest::class);
+    }
+    
 }
