@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use App\Models\Setting;
 use Exception;
+use Laravel\Socialite\Facades\Socialite;
+use Firebase\JWT\JWT;
+use Firebase\JWT\JWK;
 
 class AuthController extends Controller
 {
@@ -49,7 +52,6 @@ class AuthController extends Controller
             'updated_at' => $user->updated_at,
         ];
     }
-
 
     public function loginEmail(Request $request)
     {
@@ -231,7 +233,7 @@ class AuthController extends Controller
             $completedBirthday = true;
             $completedImage = true;
 
-            $phone_login = Setting::where('key', 'phone_login')->value('value');
+            $phone_login = Setting::where('key', 'mobile_login')->value('value');
 
             if(!$phone_login){
                 return response()->json([
@@ -251,8 +253,8 @@ class AuthController extends Controller
                     'message' => 'Invalid phone number format',
                 ], 400);
             }
-
-            $user = User::where('phone', $phoneDetails['formatted'])->first();
+            
+            $user = User::where('phone', $validatedData['phone'])->first();
 
             if (!$user) {
                 return response()->json([
@@ -369,6 +371,209 @@ class AuthController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } 
+        // catch (Exception $e) {
+        //     return response()->json([
+        //         'status_code' => 500,
+        //         'success' => false,
+        //         'message' => 'An unexpected error occurred',
+        //         'error' => $e->getMessage()
+        //     ], 500);
+        // }
+    }
+
+    public function googleLogin(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'token' => 'required|string',
+                'device_token' => 'nullable|string',
+                'device_type' => 'nullable|string|in:ios,android,web'
+            ]);
+
+            $completedInterests = true;
+            $completedGender = true;
+            $completedBirthday = true;
+            $completedImage = true;
+
+            $google_login = Setting::where('key', 'google_login')->value('value');
+
+            if(!$google_login){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Google login is not allowed',
+                ], 404);
+            }
+
+            try {
+                $googleUser = Socialite::driver('google')->userFromToken($validatedData['token']);
+                if (empty($googleUser->email)) {
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => 'Email not found, try another Google email',
+                    ], 400);
+                }
+            } catch (Exception $e) {
+                return response()->json([
+                    'status_code' => 401,
+                    'success' => false,
+                    'message' => 'Invalid Google token',
+                ], 401);
+            }
+            
+            // Find user by Google ID and email
+            $user = User::where('email', $googleUser->email)->where('google_id', $googleUser->id)->first();
+            
+            if (!$user) {
+                // Generate a secure random password
+                $password = substr(str_shuffle('abcdefghjklmnopqrstuvwxyzABCDEFGHJKLMNOPQRSTUVWXYZ234567890!$%^&!$%^&'), 0, 10);
+                
+                // Create a new user
+                $user = User::create([
+                    'email' => $googleUser->email,
+                    'password' => bcrypt($password),
+                    'first_name' => $googleUser->user['given_name'] ?? '',
+                    'last_name' => $googleUser->user['family_name'] ?? '',
+                    'google_id' => $googleUser->id,
+                    'image' => $googleUser->avatar,
+                    'provider' => 'google',
+                    'email_verified_at' => now(),
+                    'status' => 'active'
+                ]);
+
+                // Get fresh user data
+                $user->refresh();
+                
+                // Map user details
+                $userDetails = $this->mapUserDetails($user);
+
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'User created successfully',
+                    'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
+                ], 200);
+            }
+
+            if ($user->is_blocked) {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Your account has been blocked. Please contact support.',
+                ], 403);
+            }
+
+            if($user->status === 'inactive')
+            {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Your account has been inactive. Please contact support.',
+                ], 403);
+            }
+
+            $userInterests = $user->userInterests;
+            $interestsRequired = Setting::where('key', 'require_interest_in_on_boarding')->value('value');
+             
+            if(count($userInterests) === 0 && $interestsRequired){
+                $completedInterests = false;
+            }
+
+            $genderRequired = Setting::where('key', 'require_gender_in_on_boarding')->value('value');
+
+            if($user->gender === null && $genderRequired){
+                $completedGender = false;
+            }
+
+            $birthdayRequired = Setting::where('key', 'require_birthday_in_on_boarding')->value('value');
+
+            if($user->birthday === null && $birthdayRequired){
+                $completedBirthday = false;
+            }
+
+            $imageRequired = Setting::where('key', 'required_upload_user_image_in_on_boarding')->value('value');
+
+            if($user->img === null && $imageRequired){
+                $completedImage = false;
+            }
+            
+            // Check if any onboarding item is incomplete
+            if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
+                // Update device info and last login without giving token
+                $user->update([
+                    'device_token' => $validatedData['device_token'] ?? null,
+                    'device_type' => $validatedData['device_type'] ?? null,
+                    'last_login_at' => now()
+                ]);
+                
+                $user->refresh();
+                $userDetails = $this->mapUserDetails($user);
+                
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Login successful',
+                    'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
+                ], 200);
+            }
+            
+            // Generate token
+            $token = $user->createToken('auth_token')->accessToken;
+
+            // Update user device info and last login
+            $user->update([
+                'device_token' => $validatedData['device_token'] ?? null,
+                'device_type' => $validatedData['device_type'] ?? null,
+                'last_login_at' => now()
+            ]);
+
+            // Get fresh user data
+            $user->refresh();
+
+            // Map user details
+            $userDetails = $this->mapUserDetails($user);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Login successful',
+                'user' => $userDetails,
+                'token_type' => 'Bearer',
+                'completed_on_boarding' => [
+                    'interests' => $completedInterests,
+                    'gender' => $completedGender,
+                    'birthday' => $completedBirthday,
+                    'image' => $completedImage
+                ]
+            ], 200)->header('Authorization', $token);
+
+        } catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+            
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        } 
         catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -378,4 +583,225 @@ class AuthController extends Controller
             ], 500);
         }
     }
+
+    public function appleLogin(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'token' => 'required|string',
+                'first_name' => 'nullable|string',
+                'last_name' => 'nullable|string',
+                'device_token' => 'nullable|string',
+                'device_type' => 'nullable|string|in:ios,android,web'
+            ]);
+
+            $completedInterests = true;
+            $completedGender = true;
+            $completedBirthday = true;
+            $completedImage = true;
+
+            $apple_login = Setting::where('key', 'apple_login')->value('value');
+
+            if(!$apple_login){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Apple login is not allowed',
+                ], 404);
+            }
+
+            // Decode Apple JWT
+            try {
+                $response = file_get_contents('https://appleid.apple.com/auth/keys');
+                if (!$response) {
+                    return response()->json([
+                        'status_code' => 500,
+                        'success' => false,
+                        'message' => 'Failed to fetch Apple authentication keys',
+                    ], 500);
+                }
+
+                $decodedToken = JWT::decode(
+                    $validatedData['token'],
+                    JWK::parseKeySet(json_decode($response, true))
+                );
+
+                $userEmail = $decodedToken->email ?? null;
+
+                if (empty($userEmail)) {
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => 'Email not found in Apple authentication',
+                    ], 400);
+                }
+            } catch (Exception $e) {
+                return response()->json([
+                    'status_code' => 401,
+                    'success' => false,
+                    'message' => 'Invalid Apple token',
+                    'error' => $e->getMessage()
+                ], 401);
+            }
+            
+            // Find user by email
+            $user = User::where('email', $userEmail)->first();
+            
+            if (!$user) {
+                // Create a new user
+                $password = substr(str_shuffle('abcdefghjklmnopqrstuvwxyzABCDEFGHJKLMNOPQRSTUVWXYZ234567890!$%^&!$%^&'), 0, 10);
+                
+                $user = User::create([
+                    'email' => $userEmail,
+                    'password' => bcrypt($password),
+                    'first_name' => $validatedData['first_name'] ?? '',
+                    'last_name' => $validatedData['last_name'] ?? '',
+                    'provider' => 'apple',
+                    'email_verified_at' => now(),
+                    'status' => 'active'
+                ]);
+                
+                // Get fresh user data
+                $user->refresh();
+                
+                // Map user details
+                $userDetails = $this->mapUserDetails($user);
+
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'User created successfully',
+                    'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
+                ], 200);
+            }
+
+            if ($user->is_blocked) {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Your account has been blocked. Please contact support.',
+                ], 403);
+            }
+
+            if($user->status === 'inactive')
+            {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Your account has been inactive. Please contact support.',
+                ], 403);
+            }
+
+            $userInterests = $user->userInterests;
+            $interestsRequired = Setting::where('key', 'require_interest_in_on_boarding')->value('value');
+             
+            if(count($userInterests) === 0 && $interestsRequired){
+                $completedInterests = false;
+            }
+
+            $genderRequired = Setting::where('key', 'require_gender_in_on_boarding')->value('value');
+
+            if($user->gender === null && $genderRequired){
+                $completedGender = false;
+            }
+
+            $birthdayRequired = Setting::where('key', 'require_birthday_in_on_boarding')->value('value');
+
+            if($user->birthday === null && $birthdayRequired){
+                $completedBirthday = false;
+            }
+
+            $imageRequired = Setting::where('key', 'required_upload_user_image_in_on_boarding')->value('value');
+
+            if($user->img === null && $imageRequired){
+                $completedImage = false;
+            }
+            
+            // Check if any onboarding item is incomplete
+            if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
+                // Update device info and last login without giving token
+                $user->update([
+                    'device_token' => $validatedData['device_token'] ?? null,
+                    'device_type' => $validatedData['device_type'] ?? null,
+                    'last_login_at' => now()
+                ]);
+                
+                $user->refresh();
+                $userDetails = $this->mapUserDetails($user);
+                
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Login successful',
+                    'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
+                ], 200);
+            }
+            
+            // Generate token
+            $token = $user->createToken('auth_token')->accessToken;
+
+            // Update user device info and last login
+            $user->update([
+                'device_token' => $validatedData['device_token'] ?? null,
+                'device_type' => $validatedData['device_type'] ?? null,
+                'last_login_at' => now()
+            ]);
+
+            // Get fresh user data
+            $user->refresh();
+
+            // Map user details
+            $userDetails = $this->mapUserDetails($user);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Login successful',
+                'user' => $userDetails,
+                'token_type' => 'Bearer',
+                'completed_on_boarding' => [
+                    'interests' => $completedInterests,
+                    'gender' => $completedGender,
+                    'birthday' => $completedBirthday,
+                    'image' => $completedImage
+                ]
+            ], 200)->header('Authorization', $token);
+
+        } catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+            
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        } 
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
 }

@@ -20,7 +20,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->group(base_path('routes/Admin.php'));
 
             Route::middleware('api')
-                ->prefix('api-user')
                 ->group(base_path('routes/User.php'));
         },
     )
