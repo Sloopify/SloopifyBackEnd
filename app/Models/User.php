@@ -6,24 +6,40 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Passport\HasApiTokens;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
+    use HasFactory, Notifiable, HasApiTokens;
 
     protected $guard = 'user';
     
     protected $fillable = [
-        'name',
+        'first_name',
+        'last_name',
         'email',
+        'email_verified_at',
         'password',
+        'gender',
+        'status',
+        'is_blocked',
+        'age',
+        'birthday',
+        'phone',
+        'img',
+        'bio',
+        'referral_code',
+        'referral_link',
+        'reffred_by',
+        'last_login_at',
+        'country',
+        'city',
+        'google_id',
+        'provider',
+        'device_id',
+        'device_type',
+    
     ];
 
     protected $hidden = [
