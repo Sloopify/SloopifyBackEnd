@@ -56,11 +56,6 @@ class SettingSeeder extends Seeder
             'description' => 'Show On Boarding 3 Text',
         ]);
 
-        Setting::create([
-            'key' => 'show_interest_in_on_boarding',
-            'value' => '1',
-            'description' => 'Show Interest in On Boarding',
-        ]);
 
         Setting::create([
             'key' => 'require_interest_in_on_boarding',
@@ -68,11 +63,6 @@ class SettingSeeder extends Seeder
             'description' => 'Require Interest in On Boarding',
         ]);
 
-        Setting::create([
-            'key' => 'show_gender_in_on_boarding',
-            'value' => '1',
-            'description' => 'Show Gender in On Boarding',
-        ]);
 
         Setting::create([
             'key' => 'require_gender_in_on_boarding',
@@ -80,11 +70,6 @@ class SettingSeeder extends Seeder
             'description' => 'Require Gender in On Boarding',
         ]);
 
-        Setting::create([
-            'key' => 'show_birthday_in_on_boarding',
-            'value' => '1',
-            'description' => 'Show Birthday in On Boarding',
-        ]);
 
         Setting::create([
             'key' => 'require_birthday_in_on_boarding',
@@ -93,15 +78,9 @@ class SettingSeeder extends Seeder
         ]);
 
         Setting::create([
-            'key' => 'show_fill_account_in_on_boarding',
+            'key' => 'required_upload_user_image_in_on_boarding',
             'value' => '1',
-            'description' => 'Show Fill Account in On Boarding',
-        ]);
-
-        Setting::create([
-            'key' => 'require_fill_account_in_on_boarding',
-            'value' => '1',
-            'description' => 'Require Fill Account in On Boarding',
+            'description' => 'Required Upload User Image in On Boarding',
         ]);
 
         Setting::create([
