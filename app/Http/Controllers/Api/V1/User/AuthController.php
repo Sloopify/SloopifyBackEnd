@@ -1346,5 +1346,267 @@ class AuthController extends Controller
         }
     }
 
+    public function sendResetPasswordOtp(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'type' => 'required|string|in:email,phone',
+            ]);
 
+            $checkResetPassword = Setting::where('key', 'reset_password')->value('value');
+
+            if(!$checkResetPassword){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Reset password is not allowed',
+                ], 404);
+            }
+            $user = Auth::guard('user')->user();
+
+            if(!$user){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+            if($validatedData['type'] === 'phone'){
+                $checkOtpResetPhonePassword = Setting::where('key', 'otp_mobile_reset_password')->value('value');
+                if(!$checkOtpResetPhonePassword){
+                    return response()->json([
+                        'status_code' => 404,
+                        'success' => false,
+                        'message' => 'OTP mobile reset password is not allowed',
+                    ], 404);
+                }
+                $otp = rand(100000, 999999);
+
+                Otp::where('phone', $user->phone)
+                   ->where('type', 'reset_password')
+                   ->where('expires_at', '<=', now())
+                   ->delete();
+
+                $existingOtp = Otp::where('phone', $user->phone)
+                                 ->where('type', 'reset_password')
+                                 ->where('expires_at', '>', now())
+                                 ->first();
+
+                if($existingOtp){
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => 'OTP already sent wait 5 minutes to send again',
+                    ], 400);
+                }
+
+                Otp::create([
+                    'otp' => $otp,
+                    'type' => 'reset_password',
+                    'phone' => $user->phone,
+                    'expires_at' => now()->addMinutes(5),
+                ]);
+
+                return $this->sendMobileOtp($request);
+
+            } else {
+                $checkOtpResetEmailPassword = Setting::where('key', 'otp_email_reset_password')->value('value');
+                if(!$checkOtpResetEmailPassword){
+                    return response()->json([
+                        'status_code' => 404,
+                        'success' => false,
+                        'message' => 'OTP email reset password is not allowed',
+                    ], 404);
+                }
+                $otp = rand(100000, 999999);
+
+                Otp::where('email', $user->email)
+                   ->where('type', 'reset_password')
+                   ->where('expires_at', '<=', now())
+                   ->delete();
+
+                $existingOtp = Otp::where('email', $user->email)
+                                 ->where('type', 'reset_password')
+                                 ->where('expires_at', '>', now())
+                                 ->first();
+
+                if($existingOtp){
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => 'OTP already sent wait 5 minutes to send again',
+                    ], 400);
+                }
+
+                Otp::create([
+                    'otp' => $otp,
+                    'type' => 'reset_password',
+                    'email' => $user->email,
+                    'expires_at' => now()->addMinutes(5),
+                ]);
+
+                return $this->sendEmailOtp($request);
+
+            }
+        }
+        catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }
+    }
+
+    public function verifyResetPasswordOtp(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'type' => 'required|string|in:email,phone',
+                'otp' => 'required|string',
+            ]);
+
+            $user = Auth::guard('user')->user();
+
+            if(!$user){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            $otp = Otp::where('otp', $validatedData['otp'])
+                      ->where('type', 'reset_password')
+                      ->where($validatedData['type'] , $user->$validatedData['type'])
+                      ->where('expires_at', '>', now())
+                      ->first();
+
+            if(!$otp){
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'Invalid OTP',
+                ], 400);
+            }
+           
+
+                if($validatedData['type'] === 'phone'){
+                    $otp->update([
+                        'phone_verified' => true
+                    ]);
+                } else {
+                    $otp->update([
+                        'email_verified' => true
+                    ]);
+                }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'OTP verified successfully',
+            ], 200);
+
+        }
+        catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }
+    }
+
+    public function resetResetPassword(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'type' => 'required|string|in:email,phone',
+                'old_password' => 'required|string|min:8',
+                'new_password' => 'required|string|min:8',
+                'confirm_password' => 'required|string|min:8|same:new_password',
+            ]);
+
+            $user = Auth::guard('user')->user();
+
+            if(!$user){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            $otp = Otp::where('type', 'reset_password')
+                      ->where($validatedData['type'] , $user->$validatedData['type'])
+                      ->where($validatedData['type'].'_verified', true)
+                      ->where('expires_at', '>', now())
+                      ->first();
+
+            if(!$otp){
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'Invalid OTP',
+                ], 400);
+            }
+
+
+            if(!Hash::check($validatedData['old_password'], $user->password)){
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'Old password is incorrect',
+                ], 400);
+            }
+
+            if(Hash::check($validatedData['new_password'], $user->password)){
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'New password cannot be the same as the old password',
+                ], 400);
+            }
+
+            $user->update([
+                'password' => Hash::make($validatedData['new_password'])
+            ]);
+
+            $otp->delete();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Password reset successfully',
+            ], 200);
+        }
+        catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }
+    }
 }
