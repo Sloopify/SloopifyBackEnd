@@ -144,6 +144,24 @@ class SettingSeeder extends Seeder
         ]);
 
         Setting::create([
+            'key' => 'reset_password',
+            'value' => '1',
+            'description' => 'Reset Password',
+        ]);
+
+        Setting::create([
+            'key' => 'otp_mobile_reset_password',
+            'value' => '1',
+            'description' => 'OTP Mobile Reset Password',
+        ]);
+
+        Setting::create([
+            'key' => 'otp_email_reset_password',
+            'value' => '1',
+            'description' => 'OTP Email Reset Password',
+        ]);
+
+        Setting::create([
             'key' => 'create_user_normal_post',
             'value' => '1',
             'description' => 'Create User Normal Post',
