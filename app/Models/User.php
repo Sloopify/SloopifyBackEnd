@@ -39,7 +39,6 @@ class User extends Authenticatable
         'provider',
         'device_id',
         'device_type',
-    
     ];
 
     protected $hidden = [
@@ -60,5 +59,5 @@ class User extends Authenticatable
     {
         return $this->hasMany(UserInterest::class);
     }
-    
+
 }

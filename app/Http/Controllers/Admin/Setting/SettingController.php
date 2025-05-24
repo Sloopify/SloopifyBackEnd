@@ -24,8 +24,8 @@ class SettingController extends Controller
                     'show_birthday_in_on_boarding', 'require_birthday_in_on_boarding',
                     'show_fill_account_in_on_boarding', 'require_fill_account_in_on_boarding',
                     'show_reffered_by_in_on_boarding', 'required_upload_user_image_in_on_boarding',
-                    'google_login', 'apple_login', 'email_login', 'mobile_login', 'otp_login', 
-                    'forget_password', 'create_user_normal_post', 'show_user_normal_post', 
+                    'google_login', 'apple_login', 'email_login', 'mobile_login', 'otp_mobile_login', 'otp_email_login', 
+                    'forget_password', 'otp_mobile_forgot_password', 'otp_email_forgot_password', 'create_user_normal_post', 'show_user_normal_post', 
                     '_in_user_normal_post_live', '_in_post_audience_settings', 'show_post_audience', 
                     'show_story_user', 'create_story_user_', 'show_editing_story_user_',
                     'show_setting_story_user', '_in_story_user_settings', 'create_opinion_poll_in_story_user',
@@ -57,7 +57,7 @@ class SettingController extends Controller
             'authentication' => $allSettings->filter(function($setting) {
                 return in_array($setting->key, [
                     'google_login', 'apple_login', 'email_login', 
-                    'mobile_login', 'otp_login', 'forget_password'
+                    'mobile_login', 'otp_mobile_login', 'otp_email_login', 'forget_password', 'otp_mobile_forgot_password', 'otp_email_forgot_password'
                 ]);
             }),
             'normal_post' => $allSettings->filter(function($setting) {

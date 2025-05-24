@@ -14,6 +14,9 @@ use Exception;
 use Laravel\Socialite\Facades\Socialite;
 use Firebase\JWT\JWT;
 use Firebase\JWT\JWK;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\SendOtpMail;
+use Illuminate\Support\Facades\Cache;
 
 class AuthController extends Controller
 {
@@ -144,19 +147,19 @@ class AuthController extends Controller
             }
             
             // Check if any onboarding item is incomplete
-            if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
-                return response()->json([
-                    'status_code' => 403,
-                    'success' => false,
-                    'message' => 'Please complete your profile first',
-                    'completed_on_boarding' => [
-                        'interests' => $completedInterests,
-                        'gender' => $completedGender,
-                        'birthday' => $completedBirthday,
-                        'image' => $completedImage
-                    ]
-                ], 403);
-            }
+            // if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
+            //     return response()->json([
+            //         'status_code' => 403,
+            //         'success' => false,
+            //         'message' => 'Please complete your profile first',
+            //         'completed_on_boarding' => [
+            //             'interests' => $completedInterests,
+            //             'gender' => $completedGender,
+            //             'birthday' => $completedBirthday,
+            //             'image' => $completedImage
+            //         ]
+            //     ], 403);
+            // }
             
             // Generate token
             $token = $user->createToken('auth_token')->accessToken;
@@ -315,19 +318,19 @@ class AuthController extends Controller
             }
             
             // Check if any onboarding item is incomplete
-            if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
-                return response()->json([
-                    'status_code' => 403,
-                    'success' => false,
-                    'message' => 'Please complete your profile first',
-                    'completed_on_boarding' => [
-                        'interests' => $completedInterests,
-                        'gender' => $completedGender,
-                        'birthday' => $completedBirthday,
-                        'image' => $completedImage
-                    ]
-                ], 403);
-            }
+            // if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
+            //     return response()->json([
+            //         'status_code' => 403,
+            //         'success' => false,
+            //         'message' => 'Please complete your profile first',
+            //         'completed_on_boarding' => [
+            //             'interests' => $completedInterests,
+            //             'gender' => $completedGender,
+            //             'birthday' => $completedBirthday,
+            //             'image' => $completedImage
+            //         ]
+            //     ], 403);
+            // }
             
             // Generate token
             $token = $user->createToken('auth_token')->accessToken;
@@ -504,31 +507,31 @@ class AuthController extends Controller
                 $completedImage = false;
             }
             
-            // Check if any onboarding item is incomplete
-            if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
-                // Update device info and last login without giving token
-                $user->update([
-                    'device_token' => $validatedData['device_token'] ?? null,
-                    'device_type' => $validatedData['device_type'] ?? null,
-                    'last_login_at' => now()
-                ]);
+            // // Check if any onboarding item is incomplete
+            // if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
+            //     // Update device info and last login without giving token
+            //     $user->update([
+            //         'device_token' => $validatedData['device_token'] ?? null,
+            //         'device_type' => $validatedData['device_type'] ?? null,
+            //         'last_login_at' => now()
+            //     ]);
                 
-                $user->refresh();
-                $userDetails = $this->mapUserDetails($user);
+            //     $user->refresh();
+            //     $userDetails = $this->mapUserDetails($user);
                 
-                return response()->json([
-                    'status_code' => 200,
-                    'success' => true,
-                    'message' => 'Login successful',
-                    'user' => $userDetails,
-                    'completed_on_boarding' => [
-                        'interests' => $completedInterests,
-                        'gender' => $completedGender,
-                        'birthday' => $completedBirthday,
-                        'image' => $completedImage
-                    ]
-                ], 200);
-            }
+            //     return response()->json([
+            //         'status_code' => 200,
+            //         'success' => true,
+            //         'message' => 'Login successful',
+            //         'user' => $userDetails,
+            //         'completed_on_boarding' => [
+            //             'interests' => $completedInterests,
+            //             'gender' => $completedGender,
+            //             'birthday' => $completedBirthday,
+            //             'image' => $completedImage
+            //         ]
+            //     ], 200);
+            // }
             
             // Generate token
             $token = $user->createToken('auth_token')->accessToken;
@@ -724,30 +727,30 @@ class AuthController extends Controller
             }
             
             // Check if any onboarding item is incomplete
-            if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
-                // Update device info and last login without giving token
-                $user->update([
-                    'device_token' => $validatedData['device_token'] ?? null,
-                    'device_type' => $validatedData['device_type'] ?? null,
-                    'last_login_at' => now()
-                ]);
+            // if (!$completedInterests || !$completedGender || !$completedBirthday || !$completedImage) {
+            //     // Update device info and last login without giving token
+            //     $user->update([
+            //         'device_token' => $validatedData['device_token'] ?? null,
+            //         'device_type' => $validatedData['device_type'] ?? null,
+            //         'last_login_at' => now()
+            //     ]);
                 
-                $user->refresh();
-                $userDetails = $this->mapUserDetails($user);
+            //     $user->refresh();
+            //     $userDetails = $this->mapUserDetails($user);
                 
-                return response()->json([
-                    'status_code' => 200,
-                    'success' => true,
-                    'message' => 'Login successful',
-                    'user' => $userDetails,
-                    'completed_on_boarding' => [
-                        'interests' => $completedInterests,
-                        'gender' => $completedGender,
-                        'birthday' => $completedBirthday,
-                        'image' => $completedImage
-                    ]
-                ], 200);
-            }
+            //     return response()->json([
+            //         'status_code' => 200,
+            //         'success' => true,
+            //         'message' => 'Login successful',
+            //         'user' => $userDetails,
+            //         'completed_on_boarding' => [
+            //             'interests' => $completedInterests,
+            //             'gender' => $completedGender,
+            //             'birthday' => $completedBirthday,
+            //             'image' => $completedImage
+            //         ]
+            //     ], 200);
+            // }
             
             // Generate token
             $token = $user->createToken('auth_token')->accessToken;
@@ -800,6 +803,546 @@ class AuthController extends Controller
                 'message' => 'An unexpected error occurred',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    public function sendMobileOtp(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'phone' => 'required|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
+                'otp' => 'required|string',
+            ]);
+
+            // Save OTP in cache for 5 minutes
+            Cache::put('otp_' . $validatedData['phone'], $validatedData['otp'], now()->addMinutes(5));
+        
+            // Send email
+            Mail::to($validatedData['phone'])->send(new SendOtpMail($validatedData['otp']));
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'OTP sent successfully',
+            ], 200);
+            
+        }catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }   
+    }
+
+    public function sendEmailOtp(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'email' => 'required|email|exists:users,email',
+                'otp' => 'required|string',
+            ]);
+
+            // Save OTP in cache for 5 minutes
+            Cache::put('otp_' . $validatedData['email'], $validatedData['otp'], now()->addMinutes(5));
+        
+            // Send email
+            Mail::to($validatedData['email'])->send(new SendOtpMail($validatedData['otp']));
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'OTP sent successfully',
+            ], 200);
+
+        }catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }   
+    }
+
+    public function loginOtp(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'type' => 'required|string|in:email,phone',
+                'phone' => 'required_if:type,phone|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
+                'email' => 'required_if:type,email|email|exists:users,email',
+            ]);
+            $checkOtpLogin = Setting::where('key', 'otp_'.$validatedData['type'].'_login')->value('value');
+
+            if(!$checkOtpLogin){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'OTP '.$validatedData['type'].' login is not allowed',
+                ], 404);
+            }
+
+            $user = User::where($validatedData['type'], $validatedData[$validatedData['type']])->first();
+
+            if(!$user){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            $otp = rand(100000, 999999);
+
+            if($validatedData['type'] === 'phone'){
+                // Delete expired OTP records for this phone
+                Otp::where('phone', $validatedData['phone'])
+                   ->where('type', 'login')
+                   ->where('expires_at', '<=', now())
+                   ->delete();
+
+                // Check for existing valid OTP
+                $existingOtp = Otp::where('phone', $validatedData['phone'])
+                                 ->where('type', 'login')
+                                 ->where('expires_at', '>', now())
+                                 ->first();
+
+                if($existingOtp){
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => 'OTP already sent wait 5 minutes to send again',
+                    ], 400);
+                }
+
+                // Create new OTP record
+                Otp::create([
+                    'otp' => $otp,
+                    'type' => 'login',
+                    'phone' => $validatedData['phone'],
+                    'expires_at' => now()->addMinutes(5),
+                ]);
+
+                return $this->sendMobileOtp($request);
+            } else {
+                // Delete expired OTP records for this email
+                Otp::where('email', $validatedData['email'])
+                   ->where('type', 'login')
+                   ->where('expires_at', '<=', now())
+                   ->delete();
+
+                // Check for existing valid OTP
+                $existingOtp = Otp::where('email', $validatedData['email'])
+                                 ->where('type', 'login')
+                                 ->where('expires_at', '>', now())
+                                 ->first();
+
+                if($existingOtp){
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => 'OTP already sent wait 5 minutes to send again',
+                    ], 400);
+                }
+
+                // Create new OTP record
+                Otp::create([
+                    'otp' => $otp,
+                    'type' => 'login',
+                    'email' => $validatedData['email'],
+                    'expires_at' => now()->addMinutes(5),
+                ]);
+
+                return $this->sendEmailOtp($request);
+            }
+        }
+        catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+            
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }
+    }
+
+    public function verifyLoginOtp(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'type' => 'required|string|in:email,phone',
+                'phone' => 'required_if:type,phone|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
+                'email' => 'required_if:type,email|email|exists:users,email',
+                'otp' => 'required|string',
+            ]);
+
+            $otp = Otp::where('otp', $validatedData['otp'])
+                      ->where('type', 'login')
+                      ->where($validatedData['type'], $validatedData[$validatedData['type']])
+                      ->where('expires_at', '>', now())
+                      ->first();
+
+            if(!$otp){
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'Invalid OTP',
+                ], 400);
+            }
+
+            $user = User::where($validatedData['type'], $validatedData[$validatedData['type']])->first();
+
+            if(!$user){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            if($user->is_blocked){
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Your account has been blocked. Please contact support.',
+                ], 403);
+            }
+
+            if($user->status === 'inactive'){
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Your account has been inactive. Please contact support.',
+                ], 403);
+            }
+
+            $completedInterests = true;
+            $completedGender = true;
+            $completedBirthday = true;
+            $completedImage = true;
+
+
+            $userInterests = $user->userInterests;
+            $interestsRequired = Setting::where('key', 'require_interest_in_on_boarding')->value('value');
+             
+            if(count($userInterests) === 0 && $interestsRequired){
+                $completedInterests = false;
+            }
+
+            $genderRequired = Setting::where('key', 'require_gender_in_on_boarding')->value('value');
+
+            if($user->gender === null && $genderRequired){
+                $completedGender = false;
+            }
+
+            $birthdayRequired = Setting::where('key', 'require_birthday_in_on_boarding')->value('value');
+
+            if($user->birthday === null && $birthdayRequired){
+                $completedBirthday = false;
+            }
+
+            $imageRequired = Setting::where('key', 'required_upload_user_image_in_on_boarding')->value('value');
+
+            if($user->img === null && $imageRequired){
+                $completedImage = false;
+            }
+
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            $otp->delete();
+            $user->update([
+                'last_login_at' => now()
+            ]);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Login successful',
+                'user' => $user,
+                'token_type' => 'Bearer',
+                'completed_on_boarding' => [
+                    'interests' => $completedInterests,
+                    'gender' => $completedGender,
+                    'birthday' => $completedBirthday,
+                    'image' => $completedImage
+                ]
+            ], 200)->header('Authorization', $token);
+            
+        } catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }
+    }
+
+    public function sendForgotPasswordOtp(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'type' => 'required|string|in:email,phone',
+                'phone' => 'required_if:type,phone|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
+                'email' => 'required_if:type,email|email|exists:users,email',
+            ]);
+
+            $checkForgotPassword = Setting::where('key', 'forget_password')->value('value');
+
+            if(!$checkForgotPassword){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Forgot password is not allowed',
+                ], 404);
+            }
+
+            $user = User::where($validatedData['type'], $validatedData[$validatedData['type']])->first();
+
+            if(!$user){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            $checkOtpForgotPassword = Setting::where('key', 'otp_'.$validatedData['type'].'_forgot_password')->value('value');
+
+            if(!$checkOtpForgotPassword){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'OTP '.$validatedData['type'].' forgot password is not allowed',
+                ], 404);
+            }
+
+            $otp = rand(100000, 999999);
+
+            if($validatedData['type'] === 'phone'){
+                Otp::where('phone', $validatedData['phone'])
+                   ->where('type', 'forgot_password')
+                   ->where('expires_at', '<=', now())
+                   ->delete();
+
+                $existingOtp = Otp::where('phone', $validatedData['phone'])
+                                 ->where('type', 'forgot_password')
+                                 ->where('expires_at', '>', now())
+                                 ->first();
+
+                if($existingOtp){
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => 'OTP already sent wait 5 minutes to send again',
+                    ], 400);
+                }
+
+                Otp::create([
+                    'otp' => $otp,
+                    'type' => 'forgot_password',
+                    'phone' => $validatedData['phone'],
+                    'expires_at' => now()->addMinutes(5),
+                ]);
+                
+                return $this->sendMobileOtp($request);
+            } else {
+                Otp::where('email', $validatedData['email'])
+                   ->where('type', 'forgot_password')
+                   ->where('expires_at', '<=', now())
+                   ->delete();
+
+                $existingOtp = Otp::where('email', $validatedData['email'])
+                                 ->where('type', 'forgot_password')
+                                 ->where('expires_at', '>', now())
+                                 ->first();
+
+                if($existingOtp){
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => 'OTP already sent wait 5 minutes to send again',
+                    ], 400);
+                }
+
+                Otp::create([
+                    'otp' => $otp,
+                    'type' => 'forgot_password',
+                    'email' => $validatedData['email'],
+                    'expires_at' => now()->addMinutes(5),
+                ]);
+
+                return $this->sendEmailOtp($request);
+            }
+        }
+        catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }
+    }
+
+    public function verifyForgotPasswordOtp(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'type' => 'required|string|in:email,phone',
+                'phone' => 'required_if:type,phone|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
+                'email' => 'required_if:type,email|email|exists:users,email',
+                'otp' => 'required|string',
+            ]);
+
+            $otp = Otp::where('otp', $validatedData['otp'])
+                      ->where('type', 'forgot_password')
+                      ->where($validatedData['type'], $validatedData[$validatedData['type']])
+                      ->where('expires_at', '>', now())
+                      ->first();
+
+            if(!$otp){
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'Invalid OTP',
+                ], 400);
+            }
+
+            $user = User::where($validatedData['type'], $validatedData[$validatedData['type']])->first();
+
+            if(!$user){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            if($validatedData['type'] === 'phone'){
+                $user->update([
+                    'phone_verified' => true
+                ]);
+            } else {
+                $user->update([
+                    'email_verified' => true
+                ]);
+            }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'OTP verified successfully',
+            ], 200);
+        }
+        catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+            
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
+        }
+    }
+
+    public function resetForgotPassword(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'type' => 'required|string|in:email,phone',
+                'phone' => 'required_if:type,phone|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
+                'email' => 'required_if:type,email|email|exists:users,email',
+                'password' => 'required|string|min:8',
+                'confirm_password' => 'required|string|min:8|same:password',
+            ]);
+
+            $user = User::where($validatedData['type'], $validatedData[$validatedData['type']])->first();
+
+            if(!$user){
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            $otp = Otp::where('otp', $validatedData['otp'])
+                      ->where('type', 'forgot_password')
+                      ->where($validatedData['type'], $validatedData[$validatedData['type']])
+                      ->where($validatedData['type'].'_verified', true)
+                      ->where('expires_at', '>', now())
+                      ->first();
+
+            if(!$otp){
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'Invalid OTP',
+                ], 400);
+            }
+
+            $user->update([
+                'password' => Hash::make($validatedData['password'])
+            ]);
+            $otp->delete();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Password reset successfully',
+            ], 200);
+        }
+        catch (ValidationException $e) {
+            $errors = $e->errors();
+            $formattedErrors = [];
+            foreach ($errors as $field => $messages) {
+                $formattedErrors[$field] = implode(', ', $messages);
+            }
+
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $formattedErrors
+            ], 422);
         }
     }
 
