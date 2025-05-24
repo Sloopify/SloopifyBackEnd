@@ -114,15 +114,33 @@ class SettingSeeder extends Seeder
         ]);
 
         Setting::create([
-            'key' => 'otp_login',
+            'key' => 'otp_mobile_login',
             'value' => '1',
-            'description' => 'OTP Login',
+            'description' => 'OTP Mobile Login',
+        ]);
+
+        Setting::create([
+            'key' => 'otp_email_login',
+            'value' => '1',
+            'description' => 'OTP Email Login',
         ]);
 
         Setting::create([
             'key' => 'forget_password',
             'value' => '1',
             'description' => 'Forget Password',
+        ]);
+
+        Setting::create([
+            'key' => 'otp_mobile_forgot_password',
+            'value' => '1',
+            'description' => 'OTP Mobile Forgot Password',
+        ]);
+
+        Setting::create([
+            'key' => 'otp_email_forgot_password',
+            'value' => '1',
+            'description' => 'OTP Email Forgot Password',
         ]);
 
         Setting::create([
