@@ -2,13 +2,16 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\User\AuthController;
+use App\Http\Controllers\Api\V1\User\RegisterController;
 
 
 //=================================== User Auth Routes =============================
 
 Route::group(['prefix' => 'api/v1'], function () {
 
-    Route::group(['prefix' => 'auth', 'controller' => AuthController::class], function () {
+    Route::group(['prefix' => 'auth'], function () {
+
+      Route::group(['controller' => AuthController::class], function () {
 
       Route::post('/login-email' , 'loginEmail');
 
@@ -42,7 +45,28 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       });
 
+      Route::group(['prefix' => 'register' , 'controller' => RegisterController::class], function () {
+
+        Route::post('/create-account' , 'createAccount');
+
+        Route::post('/send-otp' , 'sendOtp');
+
+        Route::post('/verify-otp' , 'verifyOtp');
+
+        Route::post('complete-interests' , 'completeInterests');  
+
+        Route::post('complete-gender' , 'completeGender');
+
+        Route::post('complete-birthday' , 'completeBirthday');
+
+        Route::post('complete-image' , 'completeImage');
+
+        Route::post('complete-reffer' , 'completeReffer');
+
+      });
     });
+
+    });  
 
  Route::group(['middleware' => ['user.auth']], function () {
 
