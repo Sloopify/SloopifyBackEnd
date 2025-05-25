@@ -41,15 +41,16 @@ class AuthController extends Controller
             'gender' => $user->gender,
             'status' => $user->status,
             'is_blocked' => (bool)$user->is_blocked,
-            'age' => $user->age,
+            'age' => $user->birthday ? now()->diffInYears($user->birthday) : null,
             'birthday' => $user->birthday,
             'bio' => $user->bio,
             'country' => $user->country,
             'city' => $user->city,
             'provider' => $user->provider,
-            'image' => $user->provider === 'google' ? $user->image : ($user->image ? asset('storage/' . $user->image) : null),
+            'image' => $user->provider === 'google' ? $user->img : ($user->img ? asset('storage/' . $user->img) : null),
             'referral_code' => $user->referral_code,
             'referral_link' => $user->referral_link,
+            'reffered_by' => $user->reffered_by,
             'last_login_at' => $user->last_login_at,
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
@@ -806,19 +807,14 @@ class AuthController extends Controller
         }
     }
 
-    public function sendMobileOtp(Request $request)
+    public function sendMobileOtp($userPhone, $otpCode)
     {
         try {
-            $validatedData = $request->validate([
-                'phone' => 'required|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
-                'otp' => 'required|string',
-            ]);
-
-            // Save OTP in cache for 5 minutes
-            Cache::put('otp_' . $validatedData['phone'], $validatedData['otp'], now()->addMinutes(5));
+           
+            Cache::put('otp_' . $userPhone, $otpCode, now()->addMinutes(5));
         
             // Send email
-            Mail::to($validatedData['phone'])->send(new SendOtpMail($validatedData['otp']));
+            Mail::to($userPhone)->send(new SendOtpMail($otpCode));
 
             return response()->json([
                 'status_code' => 200,
@@ -842,19 +838,15 @@ class AuthController extends Controller
         }   
     }
 
-    public function sendEmailOtp(Request $request)
+    public function sendEmailOtp($userEmail, $otpCode)
     {
         try {
-            $validatedData = $request->validate([
-                'email' => 'required|email|exists:users,email',
-                'otp' => 'required|string',
-            ]);
-
+           
             // Save OTP in cache for 5 minutes
-            Cache::put('otp_' . $validatedData['email'], $validatedData['otp'], now()->addMinutes(5));
+            Cache::put('otp_' . $userEmail, $otpCode, now()->addMinutes(5));
         
             // Send email
-            Mail::to($validatedData['email'])->send(new SendOtpMail($validatedData['otp']));
+            Mail::to($userEmail)->send(new SendOtpMail($otpCode));
 
             return response()->json([
                 'status_code' => 200,
@@ -862,7 +854,7 @@ class AuthController extends Controller
                 'message' => 'OTP sent successfully',
             ], 200);
 
-        }catch (ValidationException $e) {
+        }catch (Exception $e) {
             $errors = $e->errors();
             $formattedErrors = [];
             foreach ($errors as $field => $messages) {
@@ -937,7 +929,7 @@ class AuthController extends Controller
                     'expires_at' => now()->addMinutes(5),
                 ]);
 
-                return $this->sendMobileOtp($request);
+                return $this->sendMobileOtp($validatedData['phone'], $otp);
             } else {
                 // Delete expired OTP records for this email
                 Otp::where('email', $validatedData['email'])
@@ -967,7 +959,7 @@ class AuthController extends Controller
                     'expires_at' => now()->addMinutes(5),
                 ]);
 
-                return $this->sendEmailOtp($request);
+                return $this->sendEmailOtp($validatedData['email'], $otp);
             }
         }
         catch (ValidationException $e) {
@@ -1171,7 +1163,7 @@ class AuthController extends Controller
                     'expires_at' => now()->addMinutes(5),
                 ]);
                 
-                return $this->sendMobileOtp($request);
+                return $this->sendMobileOtp($validatedData['phone'], $otp);
             } else {
                 Otp::where('email', $validatedData['email'])
                    ->where('type', 'forgot_password')
@@ -1198,7 +1190,7 @@ class AuthController extends Controller
                     'expires_at' => now()->addMinutes(5),
                 ]);
 
-                return $this->sendEmailOtp($request);
+                return $this->sendEmailOtp($validatedData['email'], $otp);
             }
         }
         catch (ValidationException $e) {
@@ -1407,7 +1399,7 @@ class AuthController extends Controller
                     'expires_at' => now()->addMinutes(5),
                 ]);
 
-                return $this->sendMobileOtp($request);
+                return $this->sendMobileOtp($user->phone, $otp);
 
             } else {
                 $checkOtpResetEmailPassword = Setting::where('key', 'otp_email_reset_password')->value('value');
@@ -1445,7 +1437,7 @@ class AuthController extends Controller
                     'expires_at' => now()->addMinutes(5),
                 ]);
 
-                return $this->sendEmailOtp($request);
+                return $this->sendEmailOtp($validatedData['email'], $otp);
 
             }
         }

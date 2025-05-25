@@ -28,7 +28,7 @@ return new class extends Migration
             $table->string('bio')->nullable();
             $table->string('referral_code')->nullable();
             $table->string('referral_link')->nullable();
-            $table->string('reffred_by')->nullable();
+            $table->string('reffered_by')->nullable();
             $table->date('last_login_at')->nullable();
             $table->string('country')->nullable();
             $table->string('city')->nullable();
