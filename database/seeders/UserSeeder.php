@@ -30,7 +30,7 @@ class UserSeeder extends Seeder
         'bio' => 'I am a developer',
         'referral_code' => '1234567890',
         'referral_link' => 'https://www.google.com',
-        'reffred_by' => '1234567890',
+        'reffered_by' => '1234567890',
         'last_login_at' => now(),
         'country' => 'Syria',
         'city' => 'Damascus',
