@@ -17,6 +17,10 @@ use Firebase\JWT\JWK;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\SendOtpMail;
 use Illuminate\Support\Facades\Cache;
+use App\Models\Otp;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
 
 class AuthController extends Controller
 {
@@ -47,7 +51,7 @@ class AuthController extends Controller
             'country' => $user->country,
             'city' => $user->city,
             'provider' => $user->provider,
-            'image' => $user->provider === 'google' ? $user->img : ($user->img ? asset('storage/' . $user->img) : null),
+            'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : null),
             'referral_code' => $user->referral_code,
             'referral_link' => $user->referral_link,
             'reffered_by' => $user->reffered_by,
@@ -822,19 +826,13 @@ class AuthController extends Controller
                 'message' => 'OTP sent successfully',
             ], 200);
             
-        }catch (ValidationException $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+        } catch (Exception $e) {
             return response()->json([
-                'status_code' => 422,
+                'status_code' => 500,
                 'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $formattedErrors
-            ], 422);
+                'message' => 'Failed to send OTP',
+                'error' => $e->getMessage()
+            ], 500);
         }   
     }
 
@@ -854,19 +852,13 @@ class AuthController extends Controller
                 'message' => 'OTP sent successfully',
             ], 200);
 
-        }catch (Exception $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+        } catch (Exception $e) {
             return response()->json([
-                'status_code' => 422,
+                'status_code' => 500,
                 'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $formattedErrors
-            ], 422);
+                'message' => 'Failed to send OTP',
+                'error' => $e->getMessage()
+            ], 500);
         }   
     }
 
@@ -1059,7 +1051,7 @@ class AuthController extends Controller
                 $completedImage = false;
             }
 
-            $token = $user->createToken('auth_token')->plainTextToken;
+            $token = $user->createToken('auth_token')->accessToken;
 
             $otp->delete();
             $user->update([
@@ -1244,11 +1236,11 @@ class AuthController extends Controller
             }
 
             if($validatedData['type'] === 'phone'){
-                $user->update([
+                $otp->update([
                     'phone_verified' => true
                 ]);
-            } else {
-                $user->update([
+            } else if($validatedData['type'] === 'email') {
+                $otp->update([
                     'email_verified' => true
                 ]);
             }
@@ -1296,10 +1288,9 @@ class AuthController extends Controller
                 ], 404);
             }
 
-            $otp = Otp::where('otp', $validatedData['otp'])
-                      ->where('type', 'forgot_password')
+            $otp = Otp::where('type', 'forgot_password')
                       ->where($validatedData['type'], $validatedData[$validatedData['type']])
-                      ->where($validatedData['type'].'_verified', true)
+                      ->where($validatedData['type'].'_verified', '1')
                       ->where('expires_at', '>', now())
                       ->first();
 
@@ -1437,7 +1428,7 @@ class AuthController extends Controller
                     'expires_at' => now()->addMinutes(5),
                 ]);
 
-                return $this->sendEmailOtp($validatedData['email'], $otp);
+                return $this->sendEmailOtp($user->email, $otp);
 
             }
         }
@@ -1477,7 +1468,7 @@ class AuthController extends Controller
 
             $otp = Otp::where('otp', $validatedData['otp'])
                       ->where('type', 'reset_password')
-                      ->where($validatedData['type'] , $user->$validatedData['type'])
+                      ->where($validatedData['type'], $user->{$validatedData['type']})
                       ->where('expires_at', '>', now())
                       ->first();
 
@@ -1544,8 +1535,8 @@ class AuthController extends Controller
             }
 
             $otp = Otp::where('type', 'reset_password')
-                      ->where($validatedData['type'] , $user->$validatedData['type'])
-                      ->where($validatedData['type'].'_verified', true)
+                      ->where($validatedData['type'] , $user->{$validatedData['type']})
+                      ->where($validatedData['type'].'_verified', '1')
                       ->where('expires_at', '>', now())
                       ->first();
 

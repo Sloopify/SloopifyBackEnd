@@ -57,7 +57,7 @@ class User extends Authenticatable
 
     public function userInterests()
     {
-        return $this->hasMany(UserInterest::class);
+        return $this->belongsToMany(Interest::class, 'user_interests', 'user_id', 'interest_id');
     }
 
 }

@@ -11,6 +11,7 @@ use Illuminate\Support\Str;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Otp;
+use Illuminate\Validation\ValidationException;
 
 class RegisterController extends Controller
 {
@@ -35,8 +36,8 @@ class RegisterController extends Controller
             'email' => $validatedData['email'],
             'password' => Hash::make($validatedData['password']),
             'phone' => $validatedData['phone'],
-            'device_id' => $validatedData['device_id'],
-            'device_type' => $validatedData['device_type'],
+            'device_id' => $validatedData['device_id'] ?? null,
+            'device_type' => $validatedData['device_type'] ?? null,
             'referral_code' => Str::random(6),
            ]);
            
@@ -45,22 +46,24 @@ class RegisterController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Account created successfully',
-                'data' => AuthController::mapUserDetails($user)
+                'data' => (new AuthController())->mapUserDetails($user)
             ], 200);
         }
-        catch (Exception $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+        catch (ValidationException $e) {
             return response()->json([
                 'status_code' => 422,
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $formattedErrors
+                'errors' => $e->errors()
             ], 422);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -69,17 +72,21 @@ class RegisterController extends Controller
         try{
         $validatedData = $request->validate([
           'type' => 'required|string|in:email,phone',
-          'email' => 'required_if:type,email|email|unique:users,email',
-          'phone' => 'required_if:type,phone|string|unique:users,phone|regex:/^\+[1-9]\d{1,14}$/',
+          'email' => 'required_if:type,email|email|exists:users,email',
+          'phone' => 'required_if:type,phone|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
         ]);
 
-        $user = User::where('email', $validatedData['email'])->orWhere('phone', $validatedData['phone'])->first();
+        if($validatedData['type'] === 'email'){
+            $user = User::where('email', $validatedData['email'])->where('email_verified_at', null)->first();
+        } else {
+            $user = User::where('phone', $validatedData['phone'])->where('email_verified_at', null)->first();
+        }
 
         if(!$user){
             return response()->json([
                 'status_code' => 404,
                 'success' => false,
-                'message' => 'User not found',    
+                'message' => 'User not found or already verified',    
             ], 404);
         }
        $otpCode =  rand(100000, 999999);
@@ -109,7 +116,7 @@ class RegisterController extends Controller
                 'email' => $user->email,
                 'expires_at' => now()->addMinutes(5),
             ]);
-           return AuthController::sendEmailOtp($user->email, $otpCode);           
+           return (new AuthController())->sendEmailOtp($user->email, $otpCode);           
         }
         else if($validatedData['type'] === 'phone'){
             $otpExists = Otp::where('phone', $user->phone)
@@ -136,22 +143,24 @@ class RegisterController extends Controller
                 'phone' => $user->phone,
                 'expires_at' => now()->addMinutes(5),
             ]);
-            return AuthController::sendMobileOtp($user->phone, $otpCode);
+            return (new AuthController())->sendMobileOtp($user->phone, $otpCode);
         }
        }
-       catch (Exception $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+       catch (ValidationException $e) {
             return response()->json([
                 'status_code' => 422,
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $formattedErrors
+                'errors' => $e->errors()
             ], 422);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -165,7 +174,11 @@ class RegisterController extends Controller
             'phone' => 'required_if:type,phone|string|regex:/^\+[1-9]\d{1,14}$/|exists:users,phone',
         ]);
 
-        $user = User::where('email', $validatedData['email'])->orWhere('phone', $validatedData['phone'])->first();
+        if($validatedData['type'] === 'email'){
+            $user = User::where('email', $validatedData['email'])->first();
+        } else {
+            $user = User::where('phone', $validatedData['phone'])->first();
+        }
         if(!$user){
             return response()->json([
                 'status_code' => 404,
@@ -220,19 +233,21 @@ class RegisterController extends Controller
              ], 200);
          }
       }
-       catch (Exception $e) {
-        $errors = $e->errors();
-        $formattedErrors = [];
-        foreach ($errors as $field => $messages) {
-            $formattedErrors[$field] = implode(', ', $messages);
-        }
-
+       catch (ValidationException $e) {
         return response()->json([
             'status_code' => 422,
             'success' => false,
             'message' => 'Validation failed',
-            'errors' => $formattedErrors
+            'errors' => $e->errors()
         ], 422);
+     }
+     catch (Exception $e) {
+        return response()->json([
+            'status_code' => 500,
+            'success' => false,
+            'message' => 'An unexpected error occurred',
+            'error' => $e->getMessage()
+        ], 500);
      }
     }
 
@@ -253,7 +268,7 @@ class RegisterController extends Controller
             ], 404);
         }
 
-        $checkExistingInterests = $user->interests()->whereIn('id', $validatedData['interests'])->exists();
+        $checkExistingInterests = $user->userInterests()->whereIn('interest_id', $validatedData['interests'])->exists();
         if($checkExistingInterests){
             return response()->json([
                 'status_code' => 400,
@@ -262,26 +277,28 @@ class RegisterController extends Controller
             ], 400);
         }
 
-        $user->interests()->attach($validatedData['interests']);
+        $user->userInterests()->attach($validatedData['interests']);
         return response()->json([
             'status_code' => 200,
             'success' => true,
             'message' => 'Interests completed successfully',    
         ], 200);
         }
-        catch (Exception $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+        catch (ValidationException $e) {
             return response()->json([
                 'status_code' => 422,
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $formattedErrors
+                'errors' => $e->errors()
             ], 422);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -309,19 +326,21 @@ class RegisterController extends Controller
             'message' => 'Gender completed successfully',    
         ], 200);
         }
-        catch (Exception $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+        catch (ValidationException $e) {
             return response()->json([
                 'status_code' => 422,
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $formattedErrors
+                'errors' => $e->errors()
             ], 422);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -349,19 +368,21 @@ class RegisterController extends Controller
             'message' => 'Birthday completed successfully',    
         ], 200);
         }
-        catch (Exception $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+        catch (ValidationException $e) {
             return response()->json([
                 'status_code' => 422,
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $formattedErrors
+                'errors' => $e->errors()
             ], 422);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -393,20 +414,21 @@ class RegisterController extends Controller
             'message' => 'Image completed successfully',    
         ], 200);
         }
-        
-        catch (Exception $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+        catch (ValidationException $e) {
             return response()->json([
                 'status_code' => 422,
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $formattedErrors
+                'errors' => $e->errors()
             ], 422);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -453,19 +475,21 @@ class RegisterController extends Controller
             'message' => 'Reffered by user completed successfully',    
         ], 200);
         }
-        catch (Exception $e) {
-            $errors = $e->errors();
-            $formattedErrors = [];
-            foreach ($errors as $field => $messages) {
-                $formattedErrors[$field] = implode(', ', $messages);
-            }
-
+        catch (ValidationException $e) {
             return response()->json([
                 'status_code' => 422,
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $formattedErrors
+                'errors' => $e->errors()
             ], 422);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 }
