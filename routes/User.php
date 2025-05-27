@@ -23,6 +23,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       Route::post('/login-otp' , 'loginOtp');
 
+      Route::post('/verify-token' , 'verifyToken');
+
       Route::post('/verify-login-otp' , 'verifyLoginOtp');
 
       Route::group(['prefix' => 'forgot-password'], function () {
