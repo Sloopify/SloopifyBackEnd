@@ -1592,4 +1592,81 @@ class AuthController extends Controller
             ], 422);
         }
     }
+
+    public function verifyToken(Request $request)
+    {
+
+       $user = Auth::guard('user')->user();
+        if(!$user){
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'User not found',
+            ], 404);
+        }
+
+        if ($user->is_blocked) {
+            return response()->json([
+                'status_code' => 403,
+                'success' => false,
+                'message' => 'Your account has been blocked. Please contact support.',
+            ], 403);
+        }
+
+        if($user->status === 'inactive')
+        {
+            return response()->json([
+                'status_code' => 403,
+                'success' => 'false',
+                'message' => 'Your account has been inactive. Please contact support.',
+            ], 403);
+        }
+
+            $completedInterests = true;
+            $completedGender = true;
+            $completedBirthday = true;
+            $completedImage = true;
+
+            $userInterests = $user->userInterests;
+            $interestsRequired = Setting::where('key' , 'require_interest_in_on_boarding')->value('value');
+             
+            if(count($userInterests) === 0 && $interestsRequired){
+                $completedInterests = false;
+            }
+
+            $genderRequired = Setting::where('key' , 'require_gender_in_on_boarding')->value('value');
+
+            if($user->gender === null && $genderRequired){
+                $completedGender = false;
+            }
+
+            $birthdayRequired = Setting::where('key' , 'require_birthday_in_on_boarding')->value('value');
+
+            if($user->birthday === null && $birthdayRequired){
+                $completedBirthday = false;
+            }
+
+            $imageRequired = Setting::where('key' , 'required_upload_user_image_in_on_boarding')->value('value');
+
+            if($user->img === null && $imageRequired){
+                $completedImage = false;
+            }
+
+        $userDetails = $this->mapUserDetails($user);
+
+        return response()->json([
+            'status_code' => 200,
+            'success' => true,
+            'message' => 'Token verified successfully',
+            'data' => [
+                'user' => $userDetails,
+            ],
+            'completed_on_boarding' => [
+                'interests' => $completedInterests,
+                'gender' => $completedGender,
+                'birthday' => $completedBirthday,
+                'image' => $completedImage
+            ]
+        ], 200);
+    }
 }
