@@ -188,13 +188,14 @@ class AuthController extends Controller
                 'message' => 'Login successful',
                 'data' => [
                     'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
                 ],
-                'completed_on_boarding' => [
-                    'interests' => $completedInterests,
-                    'gender' => $completedGender,
-                    'birthday' => $completedBirthday,
-                    'image' => $completedImage
-                ]
+               
             ], 200)->withHeaders([
                 'Authorization' => $token,
                 'Access-Control-Expose-Headers' => 'Authorization'
@@ -359,13 +360,13 @@ class AuthController extends Controller
                 'message' => 'Login successful',
                 'data' => [
                     'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
                 ],
-                'completed_on_boarding' => [
-                    'interests' => $completedInterests,
-                    'gender' => $completedGender,
-                    'birthday' => $completedBirthday,
-                    'image' => $completedImage
-                ]
             ], 200)->withHeaders([
                 'Authorization' => $token,
                 'Access-Control-Expose-Headers' => 'Authorization'
@@ -460,12 +461,14 @@ class AuthController extends Controller
                     'status_code' => 200,
                     'success' => true,
                     'message' => 'User created successfully',
-                    'user' => $userDetails,
-                    'completed_on_boarding' => [
-                        'interests' => $completedInterests,
-                        'gender' => $completedGender,
-                        'birthday' => $completedBirthday,
-                        'image' => $completedImage
+                    'data' => [
+                        'user' => $userDetails,
+                        'completed_on_boarding' => [
+                            'interests' => $completedInterests,
+                            'gender' => $completedGender,
+                            'birthday' => $completedBirthday,
+                            'image' => $completedImage
+                        ]
                     ]
                 ], 200);
             }
@@ -558,14 +561,16 @@ class AuthController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Login successful',
-                'user' => $userDetails,
+                'data' => [
+                    'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
+                ],
                 'token_type' => 'Bearer',
-                'completed_on_boarding' => [
-                    'interests' => $completedInterests,
-                    'gender' => $completedGender,
-                    'birthday' => $completedBirthday,
-                    'image' => $completedImage
-                ]
             ], 200)->header('Authorization', $token);
 
         } catch (ValidationException $e) {
@@ -679,12 +684,14 @@ class AuthController extends Controller
                     'status_code' => 200,
                     'success' => true,
                     'message' => 'User created successfully',
-                    'user' => $userDetails,
-                    'completed_on_boarding' => [
-                        'interests' => $completedInterests,
-                        'gender' => $completedGender,
-                        'birthday' => $completedBirthday,
-                        'image' => $completedImage
+                    'data' => [
+                        'user' => $userDetails,
+                        'completed_on_boarding' => [
+                            'interests' => $completedInterests,
+                            'gender' => $completedGender,
+                            'birthday' => $completedBirthday,
+                            'image' => $completedImage
+                        ]
                     ]
                 ], 200);
             }
@@ -777,14 +784,16 @@ class AuthController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Login successful',
-                'user' => $userDetails,
+                'data' => [
+                    'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
+                ],
                 'token_type' => 'Bearer',
-                'completed_on_boarding' => [
-                    'interests' => $completedInterests,
-                    'gender' => $completedGender,
-                    'birthday' => $completedBirthday,
-                    'image' => $completedImage
-                ]
             ], 200)->header('Authorization', $token);
 
         } catch (ValidationException $e) {
@@ -1058,18 +1067,23 @@ class AuthController extends Controller
                 'last_login_at' => now()
             ]);
 
+            // Map user details
+            $userDetails = $this->mapUserDetails($user);
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Login successful',
-                'user' => $user,
+                'data' => [
+                    'user' => $userDetails,
+                    'completed_on_boarding' => [
+                        'interests' => $completedInterests,
+                        'gender' => $completedGender,
+                        'birthday' => $completedBirthday,
+                        'image' => $completedImage
+                    ]
+                ],
                 'token_type' => 'Bearer',
-                'completed_on_boarding' => [
-                    'interests' => $completedInterests,
-                    'gender' => $completedGender,
-                    'birthday' => $completedBirthday,
-                    'image' => $completedImage
-                ]
             ], 200)->header('Authorization', $token);
             
         } catch (ValidationException $e) {
@@ -1660,12 +1674,12 @@ class AuthController extends Controller
             'message' => 'Token verified successfully',
             'data' => [
                 'user' => $userDetails,
-            ],
-            'completed_on_boarding' => [
-                'interests' => $completedInterests,
-                'gender' => $completedGender,
-                'birthday' => $completedBirthday,
-                'image' => $completedImage
+                'completed_on_boarding' => [
+                    'interests' => $completedInterests,
+                    'gender' => $completedGender,
+                    'birthday' => $completedBirthday,
+                    'image' => $completedImage
+                ]
             ]
         ], 200);
     }
