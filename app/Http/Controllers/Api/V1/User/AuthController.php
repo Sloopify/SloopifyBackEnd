@@ -1683,4 +1683,27 @@ class AuthController extends Controller
             ]
         ], 200);
     }
+
+    public function logout()
+    {
+        try{
+            $user = Auth::guard('user')->user();
+            if ($user) {
+                $user->token()->revoke();
+            }
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Logout successful',
+            ], 200);
+        }
+        catch(Exception $e){
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

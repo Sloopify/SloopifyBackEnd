@@ -23,9 +23,9 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       Route::post('/login-otp' , 'loginOtp');
 
-      Route::post('/verify-token' , 'verifyToken');
-
       Route::post('/verify-login-otp' , 'verifyLoginOtp');
+
+      Route::post('/logout', 'logout')->middleware('user.auth');
 
       Route::group(['prefix' => 'forgot-password'], function () {
 
@@ -69,12 +69,6 @@ Route::group(['prefix' => 'api/v1'], function () {
     });
 
     });  
-
- Route::group(['middleware' => ['user.auth']], function () {
-
-    Route::get('/logout', [AuthController::class, 'logout']);
-
-});
 
 });
 
