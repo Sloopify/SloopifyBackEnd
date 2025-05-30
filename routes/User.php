@@ -25,6 +25,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       Route::post('/verify-login-otp' , 'verifyLoginOtp');
 
+      Route::post('/verify-token' , 'verifyToken')->middleware('user.auth');
+
       Route::post('/logout', 'logout')->middleware('user.auth');
 
       Route::group(['prefix' => 'forgot-password'], function () {
