@@ -12,10 +12,32 @@ use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Otp;
 use Illuminate\Validation\ValidationException;
+use App\Models\Interest;
 
 class RegisterController extends Controller
 {
     //
+
+    public function mapInterests($interests)
+    {
+        $groupedInterests = $interests->groupBy('category');
+        
+        return $groupedInterests->map(function ($categoryInterests, $categoryName) { 
+            return [
+                'category' => $categoryName,
+                'interests' => $categoryInterests->map(function ($interest) {
+                    return [
+                        'id' => $interest->id,
+                        'name' => $interest->name,
+                        'image' => $interest->image ? config('app.url') . asset('storage/' . $interest->image) : null,
+                        'status' => $interest->status,
+                        'created_at' => $interest->created_at,
+                        'updated_at' => $interest->updated_at,
+                    ];
+                })->values()
+            ];
+        })->values();
+    }
 
     public function createAccount(Request $request)
     {
@@ -249,6 +271,37 @@ class RegisterController extends Controller
             'error' => $e->getMessage()
         ], 500);
      }
+    }
+
+    public function getInterests()
+    {
+        try{
+        $interests = Interest::where('status', 'active')->get();
+        if($interests->isEmpty()){
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'No interests found',    
+            ], 404);
+        }
+        
+        $interestDetails = $this->mapInterests($interests);
+        
+        return response()->json([
+            'status_code' => 200,
+            'success' => true,
+            'message' => 'Interests fetched successfully',
+            'data' => $interestDetails
+        ], 200);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function completeInterests(Request $request)

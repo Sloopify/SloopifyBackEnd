@@ -66,6 +66,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/verify-otp' , 'verifyOtp');
 
+        Route::get('/get-interests' , 'getInterests');
+        
         Route::post('complete-interests' , 'completeInterests');  
 
         Route::post('complete-gender' , 'completeGender');
