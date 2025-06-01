@@ -20,6 +20,11 @@ class RegisterController extends Controller
 
     public function mapInterests($interests)
     {
+        // Convert array to collection if needed
+        if (is_array($interests)) {
+            $interests = collect($interests);
+        }
+        
         $groupedInterests = $interests->groupBy('category');
         
         return $groupedInterests->map(function ($categoryInterests, $categoryName) { 
@@ -273,10 +278,17 @@ class RegisterController extends Controller
      }
     }
 
-    public function getInterests()
+    public function getInterests(Request $request)
     {
         try{
-        $interests = Interest::where('status', 'active')->get();
+        $validatedData = $request->validate([
+            'perPage' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        $perPage = $validatedData['perPage'] ?? 10;
+        
+        $interests = Interest::where('status', 'active')->paginate($perPage);
+        
         if($interests->isEmpty()){
             return response()->json([
                 'status_code' => 404,
@@ -285,14 +297,31 @@ class RegisterController extends Controller
             ], 404);
         }
         
-        $interestDetails = $this->mapInterests($interests);
+        $interestDetails = $this->mapInterests($interests->items());
         
         return response()->json([
             'status_code' => 200,
             'success' => true,
             'message' => 'Interests fetched successfully',
-            'data' => $interestDetails
+            'data' => $interestDetails,
+            'pagination' => [
+                'current_page' => $interests->currentPage(),
+                'last_page' => $interests->lastPage(),
+                'per_page' => $interests->perPage(),
+                'total' => $interests->total(),
+                'from' => $interests->firstItem(),
+                'to' => $interests->lastItem(),
+                'has_more_pages' => $interests->hasMorePages(),
+            ]
         ], 200);
+        }
+        catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         }
         catch (Exception $e) {
             return response()->json([
