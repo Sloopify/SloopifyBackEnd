@@ -11,6 +11,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
     Route::group(['prefix' => 'auth'], function () {
 
+      //=================================== User Login =============================
+
       Route::group(['controller' => AuthController::class], function () {
 
       Route::post('/login-email' , 'loginEmail');
@@ -29,6 +31,9 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       Route::post('/logout', 'logout')->middleware('user.auth');
 
+
+     //=================================== User Forget password =============================
+
       Route::group(['prefix' => 'forgot-password'], function () {
 
         Route::post('/send-otp' , 'sendForgotPasswordOtp');
@@ -39,6 +44,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       });
 
+      //=================================== User Reset password =============================
+
       Route::group(['prefix' => 'reset-password' , 'middleware' => ['user.auth']], function () {
 
         Route::post('/send-otp' , 'sendResetPasswordOtp');
@@ -48,6 +55,8 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('/reset-password' , 'resetResetPassword');
 
       });
+
+      //=================================== User Register =============================
 
       Route::group(['prefix' => 'register' , 'controller' => RegisterController::class], function () {
 
