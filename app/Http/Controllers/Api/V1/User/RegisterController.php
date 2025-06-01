@@ -283,11 +283,13 @@ class RegisterController extends Controller
         try{
         $validatedData = $request->validate([
             'perPage' => 'nullable|integer|min:1|max:100',
+            'page' => 'nullable|integer|min:1',
         ]);
 
         $perPage = $validatedData['perPage'] ?? 10;
+        $page = $validatedData['page'] ?? 1;
         
-        $interests = Interest::where('status', 'active')->paginate($perPage);
+        $interests = Interest::where('status', 'active')->paginate($perPage, ['*'], 'page', $page);
         
         if($interests->isEmpty()){
             return response()->json([
@@ -312,6 +314,7 @@ class RegisterController extends Controller
                 'from' => $interests->firstItem(),
                 'to' => $interests->lastItem(),
                 'has_more_pages' => $interests->hasMorePages(),
+                'requested_page' => $page,
             ]
         ], 200);
         }
