@@ -35,8 +35,6 @@ class UserSeeder extends Seeder
         'last_login_at' => now(),
         'country' => 'Syria',
         'city' => 'Damascus',
-        'device_id' => '1234567890',
-        'device_type' => 'web',
         ]);
 
 
@@ -61,8 +59,6 @@ class UserSeeder extends Seeder
                 'last_login_at' => now(),
                 'country' => 'Syria',
                 'city' => 'Damascus',
-                'device_id' => Str::random(12),
-                'device_type' => 'web',
             ]);
         }
     }

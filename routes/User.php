@@ -1,11 +1,11 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\V1\User\AuthController;
-use App\Http\Controllers\Api\V1\User\RegisterController;
+use App\Http\Controllers\Api\V1\User\Auth\AuthController;
+use App\Http\Controllers\Api\V1\User\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\User\Post\PostController;
-use App\Http\Controllers\Api\V1\User\FriendController;
-use App\Http\Controllers\Api\V1\User\SessionController;
+use App\Http\Controllers\Api\V1\User\Friend\FriendController;
+use App\Http\Controllers\Api\V1\User\Settings\Sessions\SessionController;
 
 
 //=================================== User Auth Routes =============================
