@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use App\Services\FirebaseNotificationService;
+use App\Services\PostNotificationService;
+
 class AppServiceProvider extends ServiceProvider
 {
     /**
@@ -10,7 +13,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Register Firebase Notification Service
+        $this->app->singleton(FirebaseNotificationService::class, function ($app) {
+            return new FirebaseNotificationService();
+        });
+
+        // Register Post Notification Service
+        $this->app->singleton(PostNotificationService::class, function ($app) {
+            return new PostNotificationService($app->make(FirebaseNotificationService::class));
+        });
     }
 
     /**
