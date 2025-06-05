@@ -13,10 +13,16 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Otp;
 use Illuminate\Validation\ValidationException;
 use App\Models\Interest;
+use App\Services\SessionManagementService;
 
 class RegisterController extends Controller
 {
-    //
+    protected $sessionService;
+
+    public function __construct(SessionManagementService $sessionService)
+    {
+        $this->sessionService = $sessionService;
+    }
 
     public function mapInterests($interests)
     {
@@ -53,8 +59,6 @@ class RegisterController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'phone' => 'required|string|unique:users,phone|regex:/^\+[1-9]\d{1,14}$/',
-            'device_id' => 'nullable|string',
-            'device_type' => 'nullable|string|in:android,ios',
         ]);
 
            $user = User::create([
@@ -63,8 +67,6 @@ class RegisterController extends Controller
             'email' => $validatedData['email'],
             'password' => Hash::make($validatedData['password']),
             'phone' => $validatedData['phone'],
-            'device_id' => $validatedData['device_id'] ?? null,
-            'device_type' => $validatedData['device_type'] ?? null,
             'referral_code' => Str::random(6),
            ]);
            
@@ -230,6 +232,33 @@ class RegisterController extends Controller
             $user->email_verified_at = now();
             $user->save();
             $otp->delete();
+
+            // Optional: Auto-login after verification
+            // Uncomment the lines below if you want users to be automatically logged in
+            /*
+            $token = $user->createToken('auth_token')->accessToken;
+            $session = $this->sessionService->createSession($user, $request);
+            $user->update(['last_login_at' => now()]);
+            
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Email verified and logged in successfully',
+                'data' => [
+                    'user' => (new AuthController($this->sessionService))->mapUserDetails($user),
+                    'session' => [
+                        'session_token' => $session->session_token,
+                        'device_display_name' => $session->device_display_name,
+                        'expires_at' => $session->expires_at
+                    ]
+                ]
+            ], 200)->withHeaders([
+                'Authorization' => $token,
+                'X-Session-Token' => $session->session_token,
+                'Access-Control-Expose-Headers' => 'Authorization,X-Session-Token'
+            ]);
+            */
+            
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
@@ -253,6 +282,33 @@ class RegisterController extends Controller
              $user->phone_verified_at = now();
              $user->save();
              $otp->delete();
+
+            // Optional: Auto-login after verification
+            // Uncomment the lines below if you want users to be automatically logged in
+            /*
+            $token = $user->createToken('auth_token')->accessToken;
+            $session = $this->sessionService->createSession($user, $request);
+            $user->update(['last_login_at' => now()]);
+            
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Phone verified and logged in successfully',
+                'data' => [
+                    'user' => (new AuthController($this->sessionService))->mapUserDetails($user),
+                    'session' => [
+                        'session_token' => $session->session_token,
+                        'device_display_name' => $session->device_display_name,
+                        'expires_at' => $session->expires_at
+                    ]
+                ]
+            ], 200)->withHeaders([
+                'Authorization' => $token,
+                'X-Session-Token' => $session->session_token,
+                'Access-Control-Expose-Headers' => 'Authorization,X-Session-Token'
+            ]);
+            */
+
             return response()->json([
             'status_code' => 200,
             'success' => true,
@@ -278,43 +334,124 @@ class RegisterController extends Controller
      }
     }
 
-    public function getInterests(Request $request)
+    public function getInterestCategory()
     {
         try{
-        $validatedData = $request->validate([
-            'perPage' => 'nullable|integer|min:1|max:100',
-            'page' => 'nullable|integer|min:1',
-        ]);
-
-        $perPage = $validatedData['perPage'] ?? 10;
-        $page = $validatedData['page'] ?? 1;
-        
-        $interests = Interest::where('status', 'active')->paginate($perPage, ['*'], 'page', $page);
-        
-        if($interests->isEmpty()){
-            return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'No interests found',    
-            ], 404);
-        }
-        
-        $interestDetails = $this->mapInterests($interests->items());
+        $categories = Interest::where('status', 'active')
+            ->distinct()
+            ->pluck('category');
         
         return response()->json([
             'status_code' => 200,
             'success' => true,
+            'message' => 'Interest categories fetched successfully',
+            'data' => $categories
+        ], 200);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // public function getInterests(Request $request)
+    // {
+    //     try{
+    //     $validatedData = $request->validate([
+    //         'perPage' => 'nullable|integer|min:1|max:100',
+    //         'page' => 'nullable|integer|min:1',
+    //     ]);
+
+    //     $perPage = $validatedData['perPage'] ?? 10;
+    //     $page = $validatedData['page'] ?? 1;
+        
+    //     $interests = Interest::where('status', 'active')->paginate($perPage, ['*'], 'page', $page);
+        
+    //     if($interests->isEmpty()){
+    //         return response()->json([
+    //             'status_code' => 404,
+    //             'success' => false,
+    //             'message' => 'No interests found',    
+    //         ], 404);
+    //     }
+        
+    //     $interestDetails = $this->mapInterests($interests->items());
+        
+    //     return response()->json([
+    //         'status_code' => 200,
+    //         'success' => true,
+    //         'message' => 'Interests fetched successfully',
+    //         'data' => [
+    //             'interests' => $interestDetails,
+    //             'pagination' => [
+    //                 'current_page' => $interests->currentPage(),
+    //                 'last_page' => $interests->lastPage(),
+    //                 'per_page' => $interests->perPage(),
+    //                 'total' => $interests->total(),
+    //                 'from' => $interests->firstItem(),
+    //                 'to' => $interests->lastItem(),
+    //                 'has_more_pages' => $interests->hasMorePages(),
+    //                 'requested_page' => $page,
+    //             ],
+    //         ]
+    //     ], 200);
+    //     }
+    //     catch (ValidationException $e) {
+    //         return response()->json([
+    //             'status_code' => 422,
+    //             'success' => false,
+    //             'message' => 'Validation failed',
+    //             'errors' => $e->errors()
+    //         ], 422);
+    //     }
+    //     catch (Exception $e) {
+    //         return response()->json([
+    //             'status_code' => 500,
+    //             'success' => false,
+    //             'message' => 'An unexpected error occurred',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
+
+    public function getInterestsByCategoryName(Request $request)
+    {
+        try{
+        $validatedData = $request->validate([
+            'category_name' => 'required|string|exists:interests,category',
+            'perPage' => 'nullable|integer|min:1|max:100',
+            'page' => 'nullable|integer|min:1',
+        ]);
+
+                $perPage = $validatedData['perPage'] ?? 10;
+                $page = $validatedData['page'] ?? 1;
+
+        $interests = Interest::where('status', 'active')
+            ->where('category', $validatedData['category_name'])
+            ->paginate($perPage, ['*'], 'page', $page);
+        
+            $interestDetails = $this->mapInterests($interests->items());
+
+        return response()->json([
+            'status_code' => 200,
+            'success' => true,
             'message' => 'Interests fetched successfully',
-            'data' => $interestDetails,
-            'pagination' => [
-                'current_page' => $interests->currentPage(),
-                'last_page' => $interests->lastPage(),
-                'per_page' => $interests->perPage(),
-                'total' => $interests->total(),
-                'from' => $interests->firstItem(),
-                'to' => $interests->lastItem(),
-                'has_more_pages' => $interests->hasMorePages(),
-                'requested_page' => $page,
+            'data' => [
+                'interests' => $interestDetails,
+                'pagination' => [
+                    'current_page' => $interests->currentPage(),
+                    'last_page' => $interests->lastPage(),
+                    'per_page' => $interests->perPage(),
+                    'total' => $interests->total(),
+                    'from' => $interests->firstItem(),
+                    'to' => $interests->lastItem(),
+                    'has_more_pages' => $interests->hasMorePages(),
+                    'requested_page' => $page,
+                ],
             ]
         ], 200);
         }

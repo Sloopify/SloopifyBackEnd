@@ -20,11 +20,18 @@ use Illuminate\Support\Facades\Cache;
 use App\Models\Otp;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use App\Services\SessionManagementService;
+
 
 
 class AuthController extends Controller
 {
-    //
+    protected $sessionService;
+
+    public function __construct(SessionManagementService $sessionService)
+    {
+        $this->sessionService = $sessionService;
+    }
 
     public function mapUserDetails($user)
     {
@@ -71,8 +78,7 @@ class AuthController extends Controller
                     'string',
                     'min:8',
                 ],
-                'device_token' => 'nullable|string',
-                'device_type' => 'nullable|string|in:ios,android,web'
+                'push_token' => 'nullable|string', // For push notifications
             ]);
 
             $completedInterests = true;
@@ -169,12 +175,11 @@ class AuthController extends Controller
             // Generate token
             $token = $user->createToken('auth_token')->accessToken;
 
-            // Update user device info and last login
-            $user->update([
-                'device_token' => $validatedData['device_token'] ?? null,
-                'device_type' => $validatedData['device_type'] ?? null,
-                'last_login_at' => now()
-            ]);
+            // Create session
+            $session = $this->sessionService->createSession($user, $request);
+
+            // Update last login
+            $user->update(['last_login_at' => now()]);
 
             // Get fresh user data
             $user->refresh();
@@ -193,12 +198,18 @@ class AuthController extends Controller
                         'gender' => $completedGender,
                         'birthday' => $completedBirthday,
                         'image' => $completedImage
+                    ],
+                    'session' => [
+                        'session_token' => $session->session_token,
+                        'device_display_name' => $session->device_display_name,
+                        'expires_at' => $session->expires_at
                     ]
                 ],
                
             ], 200)->withHeaders([
                 'Authorization' => $token,
-                'Access-Control-Expose-Headers' => 'Authorization'
+                'X-Session-Token' => $session->session_token,
+                'Access-Control-Expose-Headers' => 'Authorization,X-Session-Token'
             ]);
 
         } catch (ValidationException $e) {
@@ -233,8 +244,7 @@ class AuthController extends Controller
                     'string',
                     'min:8',
                 ],
-                'device_token' => 'nullable|string',
-                'device_type' => 'nullable|string|in:ios,android,web'
+                'push_token' => 'nullable|string', // For push notifications
             ]);
 
             $completedInterests = true;
@@ -341,12 +351,11 @@ class AuthController extends Controller
             // Generate token
             $token = $user->createToken('auth_token')->accessToken;
 
-            // Update user device info and last login
-            $user->update([
-                'device_token' => $validatedData['device_token'] ?? null,
-                'device_type' => $validatedData['device_type'] ?? null,
-                'last_login_at' => now()
-            ]);
+            // Create session
+            $session = $this->sessionService->createSession($user, $request);
+
+            // Update last login
+            $user->update(['last_login_at' => now()]);
 
             // Get fresh user data
             $user->refresh();
@@ -365,11 +374,17 @@ class AuthController extends Controller
                         'gender' => $completedGender,
                         'birthday' => $completedBirthday,
                         'image' => $completedImage
+                    ],
+                    'session' => [
+                        'session_token' => $session->session_token,
+                        'device_display_name' => $session->device_display_name,
+                        'expires_at' => $session->expires_at
                     ]
                 ],
             ], 200)->withHeaders([
                 'Authorization' => $token,
-                'Access-Control-Expose-Headers' => 'Authorization'
+                'X-Session-Token' => $session->session_token,
+                'Access-Control-Expose-Headers' => 'Authorization,X-Session-Token'
             ]);
 
         } catch (ValidationException $e) {
@@ -395,8 +410,7 @@ class AuthController extends Controller
         try {
             $validatedData = $request->validate([
                 'token' => 'required|string',
-                'device_token' => 'nullable|string',
-                'device_type' => 'nullable|string|in:ios,android,web'
+                'push_token' => 'nullable|string', // For push notifications
             ]);
 
             $completedInterests = true;
@@ -604,8 +618,7 @@ class AuthController extends Controller
                 'token' => 'required|string',
                 'first_name' => 'nullable|string',
                 'last_name' => 'nullable|string',
-                'device_token' => 'nullable|string',
-                'device_type' => 'nullable|string|in:ios,android,web'
+                'push_token' => 'nullable|string', // For push notifications
             ]);
 
             $completedInterests = true;
@@ -987,6 +1000,7 @@ class AuthController extends Controller
                 'phone' => 'required_if:type,phone|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
                 'email' => 'required_if:type,email|email|exists:users,email',
                 'otp' => 'required|string',
+                'push_token' => 'nullable|string', // For push notifications
             ]);
 
             $otp = Otp::where('otp', $validatedData['otp'])
@@ -1062,10 +1076,16 @@ class AuthController extends Controller
 
             $token = $user->createToken('auth_token')->accessToken;
 
+            // Create session
+            $session = $this->sessionService->createSession($user, $request);
+
             $otp->delete();
             $user->update([
                 'last_login_at' => now()
             ]);
+
+            // Get fresh user data
+            $user->refresh();
 
             // Map user details
             $userDetails = $this->mapUserDetails($user);
@@ -1081,10 +1101,19 @@ class AuthController extends Controller
                         'gender' => $completedGender,
                         'birthday' => $completedBirthday,
                         'image' => $completedImage
+                    ],
+                    'session' => [
+                        'session_token' => $session->session_token,
+                        'device_display_name' => $session->device_display_name,
+                        'expires_at' => $session->expires_at
                     ]
                 ],
                 'token_type' => 'Bearer',
-            ], 200)->header('Authorization', $token);
+            ], 200)->withHeaders([
+                'Authorization' => $token,
+                'X-Session-Token' => $session->session_token,
+                'Access-Control-Expose-Headers' => 'Authorization,X-Session-Token'
+            ]);
             
         } catch (ValidationException $e) {
             $errors = $e->errors();
@@ -1684,11 +1713,20 @@ class AuthController extends Controller
         ], 200);
     }
 
-    public function logout()
+    public function logout(Request $request)
     {
         try{
             $user = Auth::guard('user')->user();
             if ($user) {
+                // Get current session token
+                $currentSessionToken = $request->header('X-Session-Token') ?? $request->bearerToken();
+                
+                // Terminate current session
+                if ($currentSessionToken) {
+                    $this->sessionService->terminateSession($currentSessionToken);
+                }
+                
+                // Revoke access token
                 $user->token()->revoke();
             }
             return response()->json([

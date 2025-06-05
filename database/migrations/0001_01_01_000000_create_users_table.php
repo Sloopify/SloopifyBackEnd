@@ -34,8 +34,6 @@ return new class extends Migration
             $table->string('city')->nullable();
             $table->text('google_id')->nullable();
             $table->enum('provider',['google' , 'apple'])->nullable();
-            $table->text('device_id')->nullable();
-            $table->string('device_type')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });
