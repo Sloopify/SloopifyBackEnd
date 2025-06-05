@@ -22,11 +22,11 @@ return new class extends Migration
             $table->string('browser')->nullable(); // Chrome, Safari, Firefox, etc.
             $table->string('ip_address')->nullable();
             $table->string('user_agent')->nullable();
+            $table->text('push_token')->nullable();
             $table->json('location')->nullable(); // country, city from IP
             $table->timestamp('last_activity');
             $table->timestamp('expires_at')->nullable();
             $table->boolean('is_active')->default(true);
-            $table->text('push_token')->nullable()->after('user_agent');
             $table->timestamps();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
