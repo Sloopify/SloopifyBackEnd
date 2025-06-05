@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use App\Models\User;
+use Illuminate\Support\Str;
 
 class UserSeeder extends Seeder
 {
@@ -37,5 +38,32 @@ class UserSeeder extends Seeder
         'device_id' => '1234567890',
         'device_type' => 'web',
         ]);
+
+
+        for ($i = 1; $i <= 20; $i++) {
+            User::create([
+                'first_name' => 'User' . $i,
+                'last_name' => 'Test',
+                'email' => 'user' . $i . '@example.com',
+                'email_verified_at' => now(),
+                'password' => bcrypt('Password123!'),
+                'gender' => $i % 2 === 0 ? 'male' : 'female',
+                'status' => 'active',
+                'is_blocked' => 0,
+                'age' => rand(18, 40),
+                'birthday' => now()->subYears(rand(18, 40))->format('Y-m-d'),
+                'phone' => '+9639000000' . str_pad($i, 2, '0', STR_PAD_LEFT),
+                'img' => 'https://via.placeholder.com/150',
+                'bio' => 'I am user number ' . $i,
+                'referral_code' => Str::random(10),
+                'referral_link' => 'https://example.com?ref=' . Str::random(6),
+                'reffered_by' => null,
+                'last_login_at' => now(),
+                'country' => 'Syria',
+                'city' => 'Damascus',
+                'device_id' => Str::random(12),
+                'device_type' => 'web',
+            ]);
+        }
     }
 }

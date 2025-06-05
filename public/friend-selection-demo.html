@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Friend Selection Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .privacy-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 2px solid #e1e1e1;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        
+        .privacy-section h2 {
+            color: #555;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .friends-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        
+        .friends-table th {
+            background-color: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #dee2e6;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .friends-table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .friends-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .profile-img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        
+        .friend-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .friend-name {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .online-status {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #28a745;
+            margin-left: 5px;
+        }
+        
+        .offline {
+            background-color: #6c757d;
+        }
+        
+        .checkbox-cell {
+            text-align: center;
+        }
+        
+        .friend-checkbox {
+            transform: scale(1.2);
+            accent-color: #007bff;
+        }
+        
+        .selected-count {
+            background-color: #e3f2fd;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-weight: 500;
+            color: #1976d2;
+        }
+        
+        .action-buttons {
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            margin: 0 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .api-info {
+            background-color: #e8f5e8;
+            border: 1px solid #c3e6c3;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        
+        .api-info h3 {
+            margin-top: 0;
+            color: #155724;
+        }
+        
+        .api-endpoint {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 Friend Selection for Post Privacy</h1>
+        
+        <div class="privacy-section">
+            <h2>📋 Specific Friends Selection</h2>
+            <p>Select specific friends who can see this post:</p>
+            
+            <input type="text" class="search-box" placeholder="🔍 Search friends..." id="searchSpecific">
+            
+            <table class="friends-table">
+                <thead>
+                    <tr>
+                        <th>Select</th>
+                        <th>Friend</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="specificFriendsTable">
+                    <tr>
+                        <td class="checkbox-cell">
+                            <input type="checkbox" class="friend-checkbox" data-friend-id="1">
+                        </td>
+                        <td>
+                            <div class="friend-info">
+                                <img src="https://via.placeholder.com/40/007bff/ffffff?text=JD" alt="Profile" class="profile-img">
+                                <div>
+                                    <div class="friend-name">John Doe</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="online-status"></span>
+                            Online
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="checkbox-cell">
+                            <input type="checkbox" class="friend-checkbox" data-friend-id="2">
+                        </td>
+                        <td>
+                            <div class="friend-info">
+                                <img src="https://via.placeholder.com/40/28a745/ffffff?text=JS" alt="Profile" class="profile-img">
+                                <div>
+                                    <div class="friend-name">Jane Smith</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="online-status offline"></span>
+                            Offline
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="checkbox-cell">
+                            <input type="checkbox" class="friend-checkbox" data-friend-id="3">
+                        </td>
+                        <td>
+                            <div class="friend-info">
+                                <img src="https://via.placeholder.com/40/dc3545/ffffff?text=MA" alt="Profile" class="profile-img">
+                                <div>
+                                    <div class="friend-name">Mike Anderson</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="online-status"></span>
+                            Online
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="selected-count" id="specificCount">
+                Selected: 0 friends
+            </div>
+        </div>
+        
+        <div class="privacy-section">
+            <h2>🚫 Friends Except Selection</h2>
+            <p>Select friends to exclude from seeing this post (all other friends will see it):</p>
+            
+            <input type="text" class="search-box" placeholder="🔍 Search friends..." id="searchExcept">
+            
+            <table class="friends-table">
+                <thead>
+                    <tr>
+                        <th>Exclude</th>
+                        <th>Friend</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="exceptFriendsTable">
+                    <tr>
+                        <td class="checkbox-cell">
+                            <input type="checkbox" class="friend-checkbox except-checkbox" data-friend-id="1">
+                        </td>
+                        <td>
+                            <div class="friend-info">
+                                <img src="https://via.placeholder.com/40/007bff/ffffff?text=JD" alt="Profile" class="profile-img">
+                                <div>
+                                    <div class="friend-name">John Doe</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="online-status"></span>
+                            Online
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="checkbox-cell">
+                            <input type="checkbox" class="friend-checkbox except-checkbox" data-friend-id="2">
+                        </td>
+                        <td>
+                            <div class="friend-info">
+                                <img src="https://via.placeholder.com/40/28a745/ffffff?text=JS" alt="Profile" class="profile-img">
+                                <div>
+                                    <div class="friend-name">Jane Smith</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="online-status offline"></span>
+                            Offline
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="checkbox-cell">
+                            <input type="checkbox" class="friend-checkbox except-checkbox" data-friend-id="3">
+                        </td>
+                        <td>
+                            <div class="friend-info">
+                                <img src="https://via.placeholder.com/40/dc3545/ffffff?text=MA" alt="Profile" class="profile-img">
+                                <div>
+                                    <div class="friend-name">Mike Anderson</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="online-status"></span>
+                            Online
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="selected-count" id="exceptCount">
+                Excluded: 0 friends
+            </div>
+        </div>
+        
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="applySelection()">✅ Apply Selection</button>
+            <button class="btn btn-secondary" onclick="clearSelection()">🗑️ Clear All</button>
+        </div>
+        
+        <div class="api-info">
+            <h3>📡 API Endpoint Information</h3>
+            <p><strong>Get Friends for Privacy Selection:</strong></p>
+            <div class="api-endpoint">
+                GET /api/v1/friends/for-post-privacy
+            </div>
+            <p><strong>Parameters:</strong></p>
+            <ul>
+                <li><code>search</code> - Search friends by name (optional)</li>
+                <li><code>page</code> - Page number for pagination (optional)</li>
+                <li><code>per_page</code> - Number of friends per page (optional, max 100)</li>
+            </ul>
+            <p><strong>Response includes:</strong> Friend ID, Name, Profile Image, Online Status</p>
+        </div>
+    </div>
+
+    <script>
+        // Update specific friends count
+        function updateSpecificCount() {
+            const checked = document.querySelectorAll('#specificFriendsTable .friend-checkbox:checked').length;
+            document.getElementById('specificCount').textContent = `Selected: ${checked} friends`;
+        }
+        
+        // Update except friends count
+        function updateExceptCount() {
+            const checked = document.querySelectorAll('#exceptFriendsTable .except-checkbox:checked').length;
+            document.getElementById('exceptCount').textContent = `Excluded: ${checked} friends`;
+        }
+        
+        // Add event listeners for checkboxes
+        document.addEventListener('DOMContentLoaded', function() {
+            // Specific friends checkboxes
+            const specificCheckboxes = document.querySelectorAll('#specificFriendsTable .friend-checkbox');
+            specificCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateSpecificCount);
+            });
+            
+            // Except friends checkboxes  
+            const exceptCheckboxes = document.querySelectorAll('#exceptFriendsTable .except-checkbox');
+            exceptCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateExceptCount);
+            });
+            
+            // Search functionality
+            document.getElementById('searchSpecific').addEventListener('input', function(e) {
+                filterTable('specificFriendsTable', e.target.value);
+            });
+            
+            document.getElementById('searchExcept').addEventListener('input', function(e) {
+                filterTable('exceptFriendsTable', e.target.value);
+            });
+        });
+        
+        // Filter table based on search
+        function filterTable(tableId, searchTerm) {
+            const table = document.getElementById(tableId);
+            const rows = table.getElementsByTagName('tr');
+            
+            for (let i = 0; i < rows.length; i++) {
+                const nameCell = rows[i].querySelector('.friend-name');
+                if (nameCell) {
+                    const name = nameCell.textContent.toLowerCase();
+                    if (name.includes(searchTerm.toLowerCase())) {
+                        rows[i].style.display = '';
+                    } else {
+                        rows[i].style.display = 'none';
+                    }
+                }
+            }
+        }
+        
+        // Apply selection
+        function applySelection() {
+            const specificIds = Array.from(document.querySelectorAll('#specificFriendsTable .friend-checkbox:checked'))
+                .map(cb => cb.dataset.friendId);
+            
+            const exceptIds = Array.from(document.querySelectorAll('#exceptFriendsTable .except-checkbox:checked'))
+                .map(cb => cb.dataset.friendId);
+            
+            console.log('Specific Friends IDs:', specificIds);
+            console.log('Except Friends IDs:', exceptIds);
+            
+            alert(`Selection applied!\nSpecific Friends: ${specificIds.join(', ')}\nExcept Friends: ${exceptIds.join(', ')}`);
+        }
+        
+        // Clear selection
+        function clearSelection() {
+            document.querySelectorAll('.friend-checkbox').forEach(cb => cb.checked = false);
+            updateSpecificCount();
+            updateExceptCount();
+        }
+    </script>
+</body>
+</html> 

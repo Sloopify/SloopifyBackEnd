@@ -3,6 +3,9 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\User\AuthController;
 use App\Http\Controllers\Api\V1\User\RegisterController;
+use App\Http\Controllers\Api\V1\User\Post\PostController;
+use App\Http\Controllers\Api\V1\User\FriendController;
+use App\Http\Controllers\Api\V1\User\SessionController;
 
 
 //=================================== User Auth Routes =============================
@@ -66,7 +69,9 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/verify-otp' , 'verifyOtp');
 
-        Route::get('/get-interests' , 'getInterests');
+        Route::get('/get-interest-category' , 'getInterestCategory');
+
+        Route::post('/get-interests-by-category-name' , 'getInterestsByCategoryName');
         
         Route::post('complete-interests' , 'completeInterests');  
 
@@ -81,8 +86,63 @@ Route::group(['prefix' => 'api/v1'], function () {
          });
       });
 
+    
    });  
 
-   
+     //=================================== User Post =============================
+
+     Route::group(['prefix' => 'post' , 'middleware' => ['user.auth']], function () {
+        
+      Route::group(['controller' => PostController::class], function () {
+
+        Route::post('/create-post' , 'createPost');
+    
+      });
+    });
+
+    //=================================== User Friends =============================
+
+    Route::group(['prefix' => 'friends' , 'middleware' => ['user.auth']], function () {
+        
+      Route::group(['controller' => FriendController::class], function () {
+
+        Route::get('/for-post-privacy' , 'getFriendsForPostPrivacy');
+        
+        Route::post('/send-request' , 'sendFriendRequest');
+        
+        Route::get('/pending-requests' , 'getPendingRequests');
+        
+        Route::post('/accept/{friendshipId}' , 'acceptFriendRequest');
+        
+        Route::post('/decline/{friendshipId}' , 'declineFriendRequest');
+    
+      });
+    });
+
+    //=================================== User Sessions =============================
+
+    Route::group(['prefix' => 'sessions' , 'middleware' => ['user.auth']], function () {
+        
+      Route::group(['controller' => SessionController::class], function () {
+
+        Route::get('/' , 'index'); // Get all active sessions
+        
+        Route::get('/stats' , 'stats'); // Get session statistics
+        
+        Route::get('/current' , 'current'); // Get current session details
+        
+        Route::post('/heartbeat' , 'heartbeat'); // Update session activity
+        
+        Route::delete('/{sessionId}' , 'terminate'); // Terminate specific session
+        
+        Route::post('/terminate-others' , 'terminateOthers'); // Terminate all other sessions
+        
+        Route::post('/terminate-all' , 'terminateAll'); // Logout from all devices
+        
+        Route::post('/cleanup' , 'cleanup'); // Clean up expired sessions (admin)
+    
+      });
+    });
+
 });
 
