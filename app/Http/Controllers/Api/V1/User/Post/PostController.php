@@ -14,6 +14,7 @@ use App\Models\PostPoll;
 use App\Models\PersonalOccasion;
 use App\Models\PollVote;
 use App\Services\ContentModerationService;
+use App\Services\PostNotificationService;
 use Illuminate\Validation\ValidationException;
 use Exception;
 
@@ -22,10 +23,14 @@ class PostController extends Controller
     //
 
     protected $moderationService;
+    protected $notificationService;
 
-    public function __construct(ContentModerationService $moderationService)
-    {
+    public function __construct(
+        ContentModerationService $moderationService,
+        PostNotificationService $notificationService
+    ) {
         $this->moderationService = $moderationService;
+        $this->notificationService = $notificationService;
     }
 
 
@@ -294,6 +299,18 @@ class PostController extends Controller
             $moderationResult = $this->moderationService->moderatePost($post);
 
             DB::commit();
+
+            // Send notifications if post is approved
+            if ($moderationResult['action'] === 'approved') {
+                try {
+                    $this->notificationService->sendPostNotifications($post);
+                } catch (\Exception $e) {
+                    // Log notification errors but don't fail the post creation
+                    \Log::error('Failed to send post notifications: ' . $e->getMessage(), [
+                        'post_id' => $post->id
+                    ]);
+                }
+            }
 
             // Load relationships for response
             $post->load(['user', 'media', 'poll', 'personalOccasion']);
