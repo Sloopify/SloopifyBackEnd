@@ -17,6 +17,8 @@ use App\Services\ContentModerationService;
 use App\Services\PostNotificationService;
 use Illuminate\Validation\ValidationException;
 use Exception;
+use App\Models\PostFeeling;
+use App\Models\PostActivity;
 
 class PostController extends Controller
 {
@@ -33,6 +35,41 @@ class PostController extends Controller
         $this->notificationService = $notificationService;
     }
 
+    public function mapFeelings($feelings)
+    {
+        // Convert array to collection if needed
+        if (is_array($feelings)) {
+            $feelings = collect($feelings);
+        }
+        
+        return $feelings->map(function ($feeling) {
+            return [
+                'id' => $feeling->id,
+                'name' => $feeling->name,
+                'mobile_icon' => $feeling->mobile_icon ? config('app.url') . asset('storage/feelings/mobile/' . $feeling->mobile_icon) : null,
+                'web_icon' => $feeling->web_icon ? config('app.url') . asset('storage/feelings/web/' . $feeling->web_icon) : null,
+                'status' => $feeling->status,
+                'created_at' => $feeling->created_at,
+                'updated_at' => $feeling->updated_at,
+            ];
+        })->values();
+    }
+
+    public function mapActivities($activities)
+    {
+        return $activities->map(function ($activity) {
+            return [
+                'id' => $activity->id,
+                'name' => $activity->name,
+                'mobile_icon' => $activity->mobile_icon ? config('app.url') . asset('storage/activities/mobile/' . $activity->mobile_icon) : null,
+                'web_icon' => $activity->web_icon ? config('app.url') . asset('storage/activities/web/' . $activity->web_icon) : null,
+                'status' => $activity->status,
+                'category' => $activity->category,
+                'created_at' => $activity->created_at,
+                'updated_at' => $activity->updated_at,
+            ];
+        })->values();
+    }
 
     public function createPost(Request $request)
     {
@@ -488,7 +525,62 @@ class PostController extends Controller
     }
 
 
+    public function getFeeling()
+    {
+        try {
+        $feelings = PostFeeling::where('status', 'active')->get();
+        if($feelings->isEmpty()) {
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'No feelings found'
+            ], 404);
+        }
+        
+        return response()->json([
+            'status_code' => 200,
+            'success' => true,
+            'message' => 'Feelings retrieved successfully',
+            'data' => $this->mapFeelings($feelings)
+        ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve feelings',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
+
+    public function getActivity()
+    {
+        try {
+        $activities = PostActivity::where('status', 'active')->get();
+        if($activities->isEmpty()) {
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'No activities found'
+            ], 404);
+        }
+        return response()->json([
+            'status_code' => 200,
+            'success' => true,
+            'message' => 'Activities retrieved successfully',
+            'data' => $this->mapActivities($activities)
+        ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve activities',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
 
 
     

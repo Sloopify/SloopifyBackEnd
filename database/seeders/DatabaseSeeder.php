@@ -23,6 +23,8 @@ class DatabaseSeeder extends Seeder
             InterestSeeder::class,
             UserInterestSeeder::class,
             FriendshipSeeder::class,
+            FellingSeeder::class,
+            ActivitySeeder::class,
         ]);
     }
 }
