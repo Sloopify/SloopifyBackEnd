@@ -96,13 +96,17 @@ Route::group(['prefix' => 'api/v1'], function () {
       Route::group(['controller' => PostController::class], function () {
 
         Route::post('/create-post' , 'createPost');
+
+        Route::get('/get-feeling' , 'getFeeling');
+
+        Route::get('/get-activity' , 'getActivity');
     
       });
     });
 
     //=================================== User Friends =============================
 
-    Route::group(['prefix' => 'friends' , 'middleware' => ['user.auth']], function () {
+    Route::group(['prefix' => 'friends/friend-requests' , 'middleware' => ['user.auth']], function () {
         
       Route::group(['controller' => FriendController::class], function () {
 

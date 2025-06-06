@@ -4,6 +4,10 @@ namespace App\Http\Controllers\Api\V1\User\Post;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+use App\Models\Post;
+use App\Models\ContentModerationLog;
+use App\Services\ContentModerationService;
 
 class ModerationController extends Controller
 {
