@@ -10,7 +10,8 @@ class Interest extends Model
 
     protected $fillable = [
         'name', 
-        'image', 
+        'web_icon', 
+        'mobile_icon', 
         'status',
         'category'
         ];

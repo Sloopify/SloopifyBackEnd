@@ -14,7 +14,8 @@ return new class extends Migration
         Schema::create('interests', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('image')->nullable();
+            $table->string('web_icon')->nullable();
+            $table->string('mobile_icon')->nullable();
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->enum('category', ['Entertainment & Hobbies' ,'Education & Learning' ,'Technology & Digital' , 'Health & Fitness' , 'Career & Business' , 'Lifestyle & Travel' , 'Art & Creativity' , 'Science & Nature' , 'Food & Drink' , 'Social & Community' , 'Other']);
             $table->timestamps();

@@ -599,7 +599,6 @@ class PostController extends Controller
         }
     }
 
-
     public function getFeeling()
     {
         try {
@@ -627,7 +626,6 @@ class PostController extends Controller
             ], 500);
         }
     }
-
 
     public function getActivityCategory()
     {
@@ -797,6 +795,7 @@ class PostController extends Controller
     }
 
 
+    
 
     
     
