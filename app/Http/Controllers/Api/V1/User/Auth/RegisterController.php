@@ -40,7 +40,8 @@ class RegisterController extends Controller
                     return [
                         'id' => $interest->id,
                         'name' => $interest->name,
-                        'image' => $interest->image ? config('app.url') . asset('storage/' . $interest->image) : null,
+                        'web_icon' => $interest->web_icon ? config('app.url') . asset('storage/web_icons/' . $interest->web_icon) : null,
+                        'mobile_icon' => $interest->mobile_icon ? config('app.url') . asset('storage/mobile_icons/' . $interest->mobile_icon) : null,
                         'status' => $interest->status,
                         'created_at' => $interest->created_at,
                         'updated_at' => $interest->updated_at,
