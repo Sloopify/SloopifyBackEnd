@@ -19,6 +19,9 @@ use Illuminate\Validation\ValidationException;
 use Exception;
 use App\Models\PostFeeling;
 use App\Models\PostActivity;
+use App\Utils\PhoneNumberHelper;
+use App\Models\Friendship;
+use App\Models\User;
 
 class PostController extends Controller
 {
@@ -68,6 +71,48 @@ class PostController extends Controller
                 'created_at' => $activity->created_at,
                 'updated_at' => $activity->updated_at,
             ];
+        })->values();
+    }
+
+    public function mapUserDetails($user)
+    {
+        $phoneDetails = PhoneNumberHelper::parsePhoneNumber($user->phone);
+
+        return [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'phone' => [
+                'full' => $phoneDetails['formatted'],
+                'code' => $phoneDetails['code'],
+                'number' => $phoneDetails['number'],
+                'valid' => $phoneDetails['valid']
+            ],
+            'email' => $user->email,
+            'email_verified' => !is_null($user->email_verified_at),
+            'gender' => $user->gender,
+            'status' => $user->status,
+            'is_blocked' => (bool)$user->is_blocked,
+            'age' => $user->birthday ? now()->diffInYears($user->birthday) : null,
+            'birthday' => $user->birthday,
+            'bio' => $user->bio,
+            'country' => $user->country,
+            'city' => $user->city,
+            'provider' => $user->provider,
+            'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : null),
+            'referral_code' => $user->referral_code,
+            'referral_link' => $user->referral_link,
+            'reffered_by' => $user->reffered_by,
+            'last_login_at' => $user->last_login_at,
+            'created_at' => $user->created_at,
+            'updated_at' => $user->updated_at,
+        ];
+    }
+
+    public function mapUsersDetails($users)
+    {
+        return $users->map(function ($user) {
+            return $this->mapUserDetails($user);
         })->values();
     }
 
@@ -794,8 +839,163 @@ class PostController extends Controller
         }
     }
 
+    public function getFriends()
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
 
-    
+            // Get all accepted friends
+            $friendships = Friendship::where(function($query) use ($user) {
+                $query->where('user_id', $user->id)
+                      ->orWhere('friend_id', $user->id);
+            })
+            ->where('status', 'accepted')
+            ->get();
+
+            // Extract friend IDs
+            $friendIds = $friendships->map(function($friendship) use ($user) {
+                return $friendship->user_id == $user->id ? $friendship->friend_id : $friendship->user_id;
+            });
+
+            // Get all friends
+            $friends = User::whereIn('id', $friendIds)->get();
+
+            // Get specific friends IDs
+            $specificFriendIds = \App\Models\SpecificFriends::where('user_id', $user->id)
+                ->pluck('friend_id')
+                ->toArray();
+
+            // Get friend except IDs
+            $friendExceptIds = \App\Models\FriendExcept::where('user_id', $user->id)
+                ->pluck('friend_id')
+                ->toArray();
+
+            // Map friends with specific/except flags
+            $mappedFriends = $friends->map(function ($friend) use ($specificFriendIds, $friendExceptIds) {
+                $friendData = $this->mapUserDetails($friend);
+                $friendData['is_specific_friend'] = in_array($friend->id, $specificFriendIds);
+                $friendData['is_friend_except'] = in_array($friend->id, $friendExceptIds);
+                return $friendData;
+            })->values();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Friends retrieved successfully',
+                'data' => $mappedFriends
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve friends',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function searchFriends(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'search' => 'required|string|max:255'
+            ]);
+
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Get all accepted friends
+            $friendships = Friendship::where(function($query) use ($user) {
+                $query->where('user_id', $user->id)
+                      ->orWhere('friend_id', $user->id);
+            })
+            ->where('status', 'accepted')
+            ->get();
+
+            // Extract friend IDs
+            $friendIds = $friendships->map(function($friendship) use ($user) {
+                return $friendship->user_id == $user->id ? $friendship->friend_id : $friendship->user_id;
+            });
+
+            // Search among friends by first_name, last_name, or email
+            $friends = User::whereIn('id', $friendIds)
+                ->where(function($query) use ($validatedData) {
+                    $query->where('first_name', 'like', '%' . $validatedData['search'] . '%')
+                          ->orWhere('last_name', 'like', '%' . $validatedData['search'] . '%')
+                          ->orWhere('email', 'like', '%' . $validatedData['search'] . '%')
+                          ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ['%' . $validatedData['search'] . '%']);
+                })
+                ->get();
+
+            if ($friends->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No friends found matching your search'
+                ], 404);
+            }
+
+            // Get specific friends IDs
+            $specificFriendIds = \App\Models\SpecificFriends::where('user_id', $user->id)
+                ->pluck('friend_id')
+                ->toArray();
+
+            // Get friend except IDs
+            $friendExceptIds = \App\Models\FriendExcept::where('user_id', $user->id)
+                ->pluck('friend_id')
+                ->toArray();
+
+            // Map friends with specific/except flags
+            $mappedFriends = $friends->map(function ($friend) use ($specificFriendIds, $friendExceptIds) {
+                $friendData = $this->mapUserDetails($friend);
+                $friendData['is_specific_friend'] = in_array($friend->id, $specificFriendIds);
+                $friendData['is_friend_except'] = in_array($friend->id, $friendExceptIds);
+                return $friendData;
+            })->values();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Friends found successfully',
+                'data' => $mappedFriends
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search friends',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+ 
+
+
 
     
     
