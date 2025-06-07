@@ -108,6 +108,8 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('search-activity-by-category' , 'searchActivityByCategory');
 
         Route::post('search-activity' , 'searchActivity');
+        
+        Route::get('check-server-capabilities' , 'checkServerCapabilities');
     
       });
     });
