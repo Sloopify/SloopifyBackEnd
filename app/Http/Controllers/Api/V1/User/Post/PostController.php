@@ -554,10 +554,149 @@ class PostController extends Controller
     }
 
 
-    public function getActivity()
+    public function getActivityCategory()
     {
         try {
-        $activities = PostActivity::where('status', 'active')->get();
+            $categories = PostActivity::where('status', 'active')
+                ->distinct()
+                ->pluck('category')
+                ->filter() 
+                ->values(); 
+            
+            if($categories->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No activity categories found'
+                ], 404);
+            }
+            
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Activity categories retrieved successfully',
+                'data' => $categories
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve activity categories',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getActivityByCategoryName(Request $request)
+    {
+       try {
+        $validatedData = $request->validate([
+        'category' => 'required|string|max:255'
+        ]);
+
+       $activities = PostActivity::where('category', $validatedData['category'])->get();
+        if($activities->isEmpty()) {
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'No activities found by category name'
+            ], 404);
+        }
+
+        return response()->json([
+            'status_code' => 200,
+            'success' => true,
+            'message' => 'Activities retrieved successfully by category name',
+            'data' => $this->mapActivities($activities)
+        ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve activities by category name',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function searchFeeling(Request $request)
+    {
+        try {
+        $validatedData = $request->validate([
+            'search' => 'required|string|max:255'
+        ]);
+
+        $feelings = PostFeeling::where('name', 'like', '%' . $validatedData['search'] . '%')->get();
+        if($feelings->isEmpty()) {
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'No feelings found'
+            ], 404);
+        }   
+
+        return response()->json([
+            'status_code' => 200,
+            'success' => true,
+            'message' => 'Feelings retrieved successfully',
+            'data' => $this->mapFeelings($feelings)
+        ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search feelings',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function searchActivityByCategory(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'search' => 'required|string|max:255'
+            ]);
+
+            $categories = PostActivity::where('status', 'active')
+                ->where('category', 'like', '%' . $validatedData['search'] . '%')
+                ->distinct()
+                ->pluck('category')
+                ->filter()
+                ->values();
+                
+            if($categories->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No categories found matching your search'
+                ], 404);
+            }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Categories retrieved successfully',
+                'data' => $categories
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search categories',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function searchActivity(Request $request)
+    {
+        try {
+        $validatedData = $request->validate([
+            'search' => 'required|string|max:255'
+        ]);
+
+        $activities = PostActivity::where('name', 'like', '%' . $validatedData['search'] . '%')->get();
         if($activities->isEmpty()) {
             return response()->json([
                 'status_code' => 404,
@@ -565,6 +704,7 @@ class PostController extends Controller
                 'message' => 'No activities found'
             ], 404);
         }
+
         return response()->json([
             'status_code' => 200,
             'success' => true,
@@ -575,13 +715,11 @@ class PostController extends Controller
             return response()->json([
                 'status_code' => 500,
                 'success' => false,
-                'message' => 'Failed to retrieve activities',
+                'message' => 'Failed to search activities',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
-    
-
 
     
     public function update(Request $request, $id)

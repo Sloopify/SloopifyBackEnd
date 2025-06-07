@@ -99,7 +99,15 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::get('/get-feeling' , 'getFeeling');
 
-        Route::get('/get-activity' , 'getActivity');
+        Route::get('/get-activity-category' , 'getActivityCategory');
+
+        Route::post('/get-activity-by-category-name' , 'getActivityByCategoryName');
+
+        Route::post('search-feeling' , 'searchFeeling');
+
+        Route::post('search-activity-by-category' , 'searchActivityByCategory');
+
+        Route::post('search-activity' , 'searchActivity');
     
       });
     });
