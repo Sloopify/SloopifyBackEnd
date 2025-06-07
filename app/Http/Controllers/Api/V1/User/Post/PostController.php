@@ -420,43 +420,118 @@ class PostController extends Controller
     private function extractVideoMetadata($filePath, &$metadata)
     {
         try {
-            // Use ffprobe (part of FFmpeg) to get video information
-            $command = "ffprobe -v quiet -print_format json -show_format -show_streams " . escapeshellarg($filePath);
-            $output = shell_exec($command);
-            
-            if ($output) {
-                $data = json_decode($output, true);
+            // First check if FFmpeg/ffprobe is available
+            if ($this->isFFmpegAvailable()) {
+                // Use ffprobe (part of FFmpeg) to get video information
+                $command = "ffprobe -v quiet -print_format json -show-format -show-streams " . escapeshellarg($filePath);
+                $output = shell_exec($command);
                 
-                if (isset($data['streams'])) {
-                    foreach ($data['streams'] as $stream) {
-                        if ($stream['codec_type'] === 'video') {
-                            $metadata['width'] = $stream['width'] ?? null;
-                            $metadata['height'] = $stream['height'] ?? null;
-                            $metadata['duration'] = isset($stream['duration']) ? (float)$stream['duration'] : null;
-                            $metadata['fps'] = $this->calculateFPS($stream);
-                            $metadata['codec'] = $stream['codec_name'] ?? null;
-                            $metadata['bitrate'] = isset($stream['bit_rate']) ? (int)$stream['bit_rate'] : null;
-                            break;
+                if ($output) {
+                    $data = json_decode($output, true);
+                    
+                    if (isset($data['streams'])) {
+                        foreach ($data['streams'] as $stream) {
+                            if ($stream['codec_type'] === 'video') {
+                                $metadata['width'] = $stream['width'] ?? null;
+                                $metadata['height'] = $stream['height'] ?? null;
+                                $metadata['duration'] = isset($stream['duration']) ? (float)$stream['duration'] : null;
+                                $metadata['fps'] = $this->calculateFPS($stream);
+                                $metadata['codec'] = $stream['codec_name'] ?? null;
+                                $metadata['bitrate'] = isset($stream['bit_rate']) ? (int)$stream['bit_rate'] : null;
+                                break;
+                            }
                         }
                     }
-                }
-                
-                // Get overall format information
-                if (isset($data['format'])) {
-                    $format = $data['format'];
-                    if (!isset($metadata['duration']) && isset($format['duration'])) {
-                        $metadata['duration'] = (float)$format['duration'];
+                    
+                    // Get overall format information
+                    if (isset($data['format'])) {
+                        $format = $data['format'];
+                        if (!isset($metadata['duration']) && isset($format['duration'])) {
+                            $metadata['duration'] = (float)$format['duration'];
+                        }
+                        if (!isset($metadata['bitrate']) && isset($format['bit_rate'])) {
+                            $metadata['bitrate'] = (int)$format['bit_rate'];
+                        }
+                        $metadata['format'] = $format['format_name'] ?? null;
+                        if (!isset($metadata['size']) && isset($format['size'])) {
+                            $metadata['size'] = (int)$format['size'];
+                        }
                     }
-                    if (!isset($metadata['bitrate']) && isset($format['bit_rate'])) {
-                        $metadata['bitrate'] = (int)$format['bit_rate'];
-                    }
-                    $metadata['format'] = $format['format_name'] ?? null;
-                    $metadata['size'] = isset($format['size']) ? (int)$format['size'] : null;
+                    
+                    \Log::info('Video metadata extracted successfully using FFmpeg', [
+                        'file' => basename($filePath),
+                        'metadata' => $metadata
+                    ]);
+                } else {
+                    \Log::warning('FFmpeg command executed but returned empty output', [
+                        'file' => basename($filePath),
+                        'command' => $command
+                    ]);
+                    $this->extractBasicVideoMetadata($filePath, $metadata);
                 }
+            } else {
+                \Log::warning('FFmpeg/ffprobe not available, using basic metadata extraction', [
+                    'file' => basename($filePath)
+                ]);
+                $this->extractBasicVideoMetadata($filePath, $metadata);
             }
         } catch (Exception $e) {
             // Log error but don't fail the upload
-            \Log::warning('Failed to extract video metadata: ' . $e->getMessage());
+            \Log::error('Failed to extract video metadata: ' . $e->getMessage(), [
+                'file' => basename($filePath),
+                'error' => $e->getTraceAsString()
+            ]);
+            $this->extractBasicVideoMetadata($filePath, $metadata);
+        }
+    }
+
+    private function isFFmpegAvailable()
+    {
+        try {
+            // Check if shell_exec is enabled
+            if (!function_exists('shell_exec')) {
+                \Log::warning('shell_exec function is not available');
+                return false;
+            }
+            
+            // Check if ffprobe command is available
+            $output = shell_exec('ffprobe -version 2>&1');
+            return !empty($output) && strpos($output, 'ffprobe') !== false;
+        } catch (Exception $e) {
+            \Log::warning('Error checking FFmpeg availability: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function extractBasicVideoMetadata($filePath, &$metadata)
+    {
+        try {
+            // Get basic file information
+            if (file_exists($filePath)) {
+                $fileSize = filesize($filePath);
+                if ($fileSize !== false) {
+                    $metadata['size'] = $fileSize;
+                }
+                
+                // Try to get MIME type
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                if ($finfo) {
+                    $mimeType = finfo_file($finfo, $filePath);
+                    if ($mimeType) {
+                        $metadata['mime_type'] = $mimeType;
+                    }
+                    finfo_close($finfo);
+                }
+                
+                \Log::info('Basic video metadata extracted', [
+                    'file' => basename($filePath),
+                    'metadata' => $metadata
+                ]);
+            }
+        } catch (Exception $e) {
+            \Log::error('Failed to extract basic video metadata: ' . $e->getMessage(), [
+                'file' => basename($filePath)
+            ]);
         }
     }
 
@@ -721,6 +796,9 @@ class PostController extends Controller
         }
     }
 
+
+
+    
     
     public function update(Request $request, $id)
     {
@@ -996,6 +1074,43 @@ class PostController extends Controller
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to retrieve user posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function checkServerCapabilities()
+    {
+        try {
+            $capabilities = [
+                'php_version' => PHP_VERSION,
+                'shell_exec_enabled' => function_exists('shell_exec'),
+                'ffmpeg_available' => $this->isFFmpegAvailable(),
+                'file_upload_enabled' => ini_get('file_uploads'),
+                'max_upload_size' => ini_get('upload_max_filesize'),
+                'max_post_size' => ini_get('post_max_size'),
+                'memory_limit' => ini_get('memory_limit'),
+                'disabled_functions' => explode(',', ini_get('disable_functions'))
+            ];
+
+            // Check FFmpeg version if available
+            if ($capabilities['ffmpeg_available']) {
+                $ffmpegVersion = shell_exec('ffmpeg -version 2>&1');
+                $capabilities['ffmpeg_version'] = $ffmpegVersion ? trim(explode("\n", $ffmpegVersion)[0]) : 'Unknown';
+            }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Server capabilities retrieved successfully',
+                'data' => $capabilities
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to check server capabilities',
                 'error' => $e->getMessage()
             ], 500);
         }
