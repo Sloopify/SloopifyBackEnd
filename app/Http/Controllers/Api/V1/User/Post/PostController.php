@@ -22,6 +22,7 @@ use App\Models\PostActivity;
 use App\Utils\PhoneNumberHelper;
 use App\Models\Friendship;
 use App\Models\User;
+use App\Models\PersonalOccasionSetting;
 
 class PostController extends Controller
 {
@@ -70,6 +71,28 @@ class PostController extends Controller
                 'category' => $activity->category,
                 'created_at' => $activity->created_at,
                 'updated_at' => $activity->updated_at,
+            ];
+        })->values();
+    }
+
+    public function mapPersonalOccasionSettings($occasions)
+    {
+        // Convert array to collection if needed
+        if (is_array($occasions)) {
+            $occasions = collect($occasions);
+        }
+        
+        return $occasions->map(function ($occasion) {
+            return [
+                'id' => $occasion->id,
+                'name' => $occasion->name,
+                'title' => $occasion->title,
+                'description' => $occasion->description,
+                'mobile_icon' => $occasion->mobile_icon ? config('app.url') . asset('storage/personal_occasions/mobile/' . $occasion->mobile_icon) : null,
+                'web_icon' => $occasion->web_icon ? config('app.url') . asset('storage/personal_occasions/web/' . $occasion->web_icon) : null,
+                'status' => $occasion->status,
+                'created_at' => $occasion->created_at,
+                'updated_at' => $occasion->updated_at,
             ];
         })->values();
     }
@@ -993,7 +1016,35 @@ class PostController extends Controller
         }
     }
 
- 
+
+    public function getPersonalOccasionSettings()
+    {
+        try{
+            $personalOccasionSettings = PersonalOccasionSetting::where('status', 'active')->get();
+            
+            if($personalOccasionSettings->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No personal occasion settings found'
+                ], 404);
+            }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Personal occasion settings retrieved successfully',
+                'data' => $this->mapPersonalOccasionSettings($personalOccasionSettings)
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve personal occasion settings',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
 

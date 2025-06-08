@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
             FriendshipSeeder::class,
             FellingSeeder::class,
             ActivitySeeder::class,
+            PersonalOccasionSeeder::class,
         ]);
     }
 }
