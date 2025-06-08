@@ -116,6 +116,15 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('search-friends' , 'searchFriends');
     
         Route::get('get-personal-occasion-settings' , 'getPersonalOccasionSettings');
+
+        Route::get('get-user-places' , 'getUserPlaces');
+
+        Route::post('create-user-place' , 'createUserPlace');
+
+        Route::post('get-user-place-by-id' , 'getUserPlaceById');
+
+        Route::post('update-user-place' , 'updateUserPlace');
+
       });
     });
 

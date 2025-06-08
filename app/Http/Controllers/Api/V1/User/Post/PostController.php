@@ -23,6 +23,7 @@ use App\Utils\PhoneNumberHelper;
 use App\Models\Friendship;
 use App\Models\User;
 use App\Models\PersonalOccasionSetting;
+use App\Models\UserPlace;
 
 class PostController extends Controller
 {
@@ -139,6 +140,43 @@ class PostController extends Controller
         })->values();
     }
 
+    public function mapUserPlaces($userPlaces)
+    {
+        // Handle single model instance
+        if ($userPlaces instanceof \App\Models\UserPlace) {
+            return [
+                'id' => $userPlaces->id,
+                'name' => $userPlaces->name,
+                'city' => $userPlaces->city,
+                'country' => $userPlaces->country,
+                'latitude' => $userPlaces->latitude,
+                'longitude' => $userPlaces->longitude,
+                'status' => $userPlaces->status,
+                'created_at' => $userPlaces->created_at,
+                'updated_at' => $userPlaces->updated_at,
+            ];
+        }
+        
+        // Handle arrays and collections
+        if (is_array($userPlaces)) {
+            $userPlaces = collect($userPlaces);
+        }
+        
+        return $userPlaces->map(function ($userPlace) {
+            return [
+                'id' => $userPlace->id,
+                'name' => $userPlace->name,
+                'city' => $userPlace->city,
+                'country' => $userPlace->country,
+                'latitude' => $userPlace->latitude,
+                'longitude' => $userPlace->longitude,
+                'status' => $userPlace->status,
+                'created_at' => $userPlace->created_at,
+                'updated_at' => $userPlace->updated_at,
+            ];
+        })->values();
+    }
+
     public function createPost(Request $request)
     {
         try {
@@ -159,7 +197,7 @@ class PostController extends Controller
                 'disappears_24h' => 'nullable|boolean',
                 'mentions.friends' => 'nullable|array',
                 'mentions.friends.*' => 'exists:users,id',
-                'mentions.place' => 'nullable|string|max:255',
+                'mentions.place' => 'nullable|integer|exists:user_places,id',
                 'mentions.feeling' => 'nullable|string|max:100',
                 'mentions.activity' => 'nullable|string|max:100',
                 'media.*' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200', // 50MB
@@ -257,6 +295,27 @@ class PostController extends Controller
                         'errors' => [
                             'mentions.friends' => [
                                 'You can only mention users who are your friends. Invalid friend IDs: ' . implode(', ', $invalidFriends)
+                            ]
+                        ]
+                    ], 422);
+                }
+            }
+
+            // Validate user place ownership
+            if ($hasPlace && !empty($mentions['place'])) {
+                $userPlace = UserPlace::where('id', $mentions['place'])
+                    ->where('user_id', $user->id)
+                    ->where('status', 'active')
+                    ->first();
+
+                if (!$userPlace) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'mentions.place' => [
+                                'The selected place does not belong to you or is not active.'
                             ]
                         ]
                     ], 422);
@@ -1016,7 +1075,6 @@ class PostController extends Controller
         }
     }
 
-
     public function getPersonalOccasionSettings()
     {
         try{
@@ -1046,9 +1104,158 @@ class PostController extends Controller
         }
     }
 
+    public function getUserPlaces()
+    {
+        try{
+            $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)->where('status', 'active')->get();
 
+            if($userPlaces->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No user places found'
+                ], 404);
+            }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User places retrieved successfully',
+                'data' => $this->mapUserPlaces($userPlaces)
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve user places',
+                'error' => $e->getMessage()
+            ], 500);    
+        }
+    }
+
+    public function createUserPlace(Request $request)
+    {
+        try{
+            $validatedData = $request->validate([
+                'name' => 'required|string|max:255',
+                'city' => 'nullable|string|max:255',
+                'country' => 'nullable|string|max:255',
+                'latitude' => 'nullable|string|max:255',
+                'longitude' => 'nullable|string|max:255',
+                'status' => 'nullable|in:active,inactive',
+            ]);
+            $validatedData['user_id'] = Auth::guard('user')->user()->id;
+            $userPlace = UserPlace::create([
+                'user_id' => Auth::guard('user')->user()->id,
+                'name' => $validatedData['name'],
+                'city' => $validatedData['city'],
+                'country' => $validatedData['country'],
+                'latitude' => $validatedData['latitude'],
+                'longitude' => $validatedData['longitude'],
+                'status' => $validatedData['status'],
+            ]);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User place created successfully',
+                'data' => $this->mapUserPlaces($userPlace)
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to create user place',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getUserPlaceById(Request $request)
+    {
+        try{
+            $validatedData = $request->validate([
+                'place_id' => 'required|exists:user_places,id',
+            ]);
+            $userPlace = UserPlace::where('user_id', Auth::guard('user')->user()->id)->findOrFail($validatedData['place_id']);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User place retrieved successfully',
+                'data' => $this->mapUserPlaces($userPlace)
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve user place',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updateUserPlace(Request $request)
+    {
+        try{
+            $validatedData = $request->validate([
+                'place_id' => 'required|exists:user_places,id',
+                'name' => 'nullable|string|max:255',
+                'city' => 'nullable|string|max:255',
+                'country' => 'nullable|string|max:255',
+                'latitude' => 'nullable|string|max:255',
+                'longitude' => 'nullable|string|max:255',
+                'status' => 'nullable|in:active,inactive',
+            ]);
+            $userPlace = UserPlace::where('user_id', Auth::guard('user')->user()->id)->findOrFail($validatedData['place_id']);
+            $userPlace->update([
+                'name' => $validatedData['name'],
+                'city' => $validatedData['city'],
+                'country' => $validatedData['country'],
+                'latitude' => $validatedData['latitude'],
+                'longitude' => $validatedData['longitude'],
+                'status' => $validatedData['status'],
+            ]);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User place updated successfully',
+                'data' => $this->mapUserPlaces($userPlace)
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update user place',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
     
+
     
     public function update(Request $request, $id)
     {
@@ -1066,7 +1273,7 @@ class PostController extends Controller
                 'mentions' => 'nullable|array',
                 'mentions.friends' => 'nullable|array',
                 'mentions.friends.*' => 'exists:users,id',
-                'mentions.place' => 'nullable|string|max:255',
+                'mentions.place' => 'nullable|integer|exists:user_places,id',
                 'mentions.feeling' => 'nullable|string|max:100',
                 'mentions.activity' => 'nullable|string|max:100',
             ]);
@@ -1075,6 +1282,7 @@ class PostController extends Controller
             $mentions = $request->input('mentions', []);
             $hasFeeling = !empty($mentions['feeling']);
             $hasActivity = !empty($mentions['activity']);
+            $hasPlace = !empty($mentions['place']);
             
             if ($hasFeeling && $hasActivity) {
                 return response()->json([
@@ -1083,6 +1291,28 @@ class PostController extends Controller
                     'message' => 'Validation failed',
                     'errors' => ['mentions' => ['You cannot specify both feeling and activity at the same time.']]
                 ], 422);
+            }
+
+            // Validate user place ownership
+            if ($hasPlace && !empty($mentions['place'])) {
+                $user = Auth::guard('user')->user();
+                $userPlace = UserPlace::where('id', $mentions['place'])
+                    ->where('user_id', $user->id)
+                    ->where('status', 'active')
+                    ->first();
+
+                if (!$userPlace) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'mentions.place' => [
+                                'The selected place does not belong to you or is not active.'
+                            ]
+                        ]
+                    ], 422);
+                }
             }
 
             DB::beginTransaction();
