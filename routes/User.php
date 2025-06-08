@@ -115,6 +115,7 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('search-friends' , 'searchFriends');
     
+        Route::get('get-personal-occasion-settings' , 'getPersonalOccasionSettings');
       });
     });
 

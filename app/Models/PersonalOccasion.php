@@ -12,8 +12,12 @@ class PersonalOccasion extends Model
     use HasFactory;
 
     protected $fillable = [
-        'post_id', 'occasion_type', 'title', 'description',
-        'details', 'occasion_date'
+        'post_id', 
+        'occasion_type',
+        'title', 
+        'description',
+        'details', 
+        'occasion_date'
     ];
 
     protected $casts = [
