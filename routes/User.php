@@ -125,6 +125,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('update-user-place' , 'updateUserPlace');
 
+        Route::post('search-user-places' , 'searchUserPlaces');
+
       });
     });
 

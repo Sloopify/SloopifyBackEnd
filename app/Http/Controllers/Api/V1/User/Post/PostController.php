@@ -1254,7 +1254,37 @@ class PostController extends Controller
         }
     }
 
-    
+    public function searchUserPlaces(Request $request)
+    {
+        try{
+            $validatedData = $request->validate([
+                'search' => 'required|string|max:255',
+            ]);
+            $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)->where('status', 'active')->where('name', 'like', '%' . $validatedData['search'] . '%')->get();
+
+            if($userPlaces->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No user places found'
+                ], 404);
+            }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User places retrieved successfully',
+                'data' => $this->mapUserPlaces($userPlaces)
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        }
+    }
 
     
     public function update(Request $request, $id)
