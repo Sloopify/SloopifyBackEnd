@@ -26,12 +26,12 @@ return new class extends Migration
             $table->json('mentions')->nullable(); // friends, places, feelings, activities
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
             $table->text('moderation_reason')->nullable();
+            $table->string('gif_url')->nullable();
             $table->boolean('is_pinned')->default(false);
             $table->boolean('is_saved')->default(false);
             $table->boolean('is_notified')->default(true);
             $table->timestamps();
             $table->softDeletes();
-        
             $table->index(['user_id', 'status']);
             $table->index(['status', 'created_at']);
         });

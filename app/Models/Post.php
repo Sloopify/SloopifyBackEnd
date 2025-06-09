@@ -24,6 +24,7 @@ class Post extends Model
          'friend_except',
          'disappears_24h',
          'disappears_at', 
+         'gif_url',
          'mentions',
          'status',
          'moderation_reason',
