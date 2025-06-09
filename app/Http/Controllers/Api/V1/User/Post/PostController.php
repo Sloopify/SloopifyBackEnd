@@ -201,6 +201,7 @@ class PostController extends Controller
                 'mentions.feeling' => 'nullable|string|max:100',
                 'mentions.activity' => 'nullable|string|max:100',
                 'media.*' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200', // 50MB
+                'gif_url' => 'nullable|url|max:2048',
                 
                 // Poll specific
                 'poll.question' => 'required_if:type,poll|string|max:500',
@@ -233,13 +234,37 @@ class PostController extends Controller
                     ], 422);
                 }
 
-                if ($request->hasFile('media')) {
+                if ($request->hasFile('media') || !empty($validatedData['gif_url'])) {
                     return response()->json([
                         'status_code' => 422,
                         'success' => false,
                         'message' => 'Validation failed',
                         'errors' => [
-                            'background_color' => ['Background color cannot be used when uploading media files.']]
+                            'background_color' => ['Background color cannot be used when uploading media files or using GIF URL.']]
+                    ], 422);
+                }
+            }
+
+            // Custom validation for gif_url and media conflict
+            if (!empty($validatedData['gif_url']) && $request->hasFile('media')) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'gif_url' => ['You cannot use both GIF URL and upload media files at the same time.']]
+                ], 422);
+            }
+
+            // Custom validation for gif_url with post types
+            if (!empty($validatedData['gif_url'])) {
+                if ($validatedData['type'] === 'poll') {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'gif_url' => ['GIF URL cannot be used with poll posts.']]
                     ], 422);
                 }
             }
@@ -441,6 +466,7 @@ class PostController extends Controller
                 'friend_except' => $validatedData['privacy'] === 'friend_except' ? ($validatedData['friend_except'] ?? null) : null,
                 'disappears_24h' => $validatedData['disappears_24h'] ?? false,
                 'mentions' => $validatedData['type'] === 'poll' ? null : $mentions, // Set mentions to null for poll posts
+                'gif_url' => $validatedData['gif_url'] ?? null,
                 'status' => 'pending' // Will be updated by moderation service
             ]);
 
