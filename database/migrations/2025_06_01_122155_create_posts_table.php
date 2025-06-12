@@ -17,7 +17,7 @@ return new class extends Migration
             $table->enum('type', ['regular', 'poll', 'personal_occasion']);
             $table->text('content')->nullable();
             $table->json('text_properties')->nullable(); // font color, bold, italic, underline
-            $table->string('background_color')->nullable();
+            $table->json('background_color')->nullable(); // array of background colors
             $table->enum('privacy', ['public', 'friends', 'specific_friends', 'friend_except', 'only_me']);
             $table->json('specific_friends')->nullable(); // array of user IDs when privacy is specific_friends
             $table->json('friend_except')->nullable(); // array of user IDs to exclude when privacy is friend_except

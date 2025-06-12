@@ -14,13 +14,21 @@ class PostMedia extends Model
     protected $fillable = [
         'post_id', 
         'type',
-         'filename', 
-         'original_name',
+        'filename', 
+        'original_name',
         'mime_type',
-         'size', 
-         'path', 
-         'url',
-         'metadata'
+        'size', 
+        'path', 
+        'url',
+        'metadata',
+        'display_order',
+        'apply_to_download',
+        'auto_play',
+        'is_rotate',
+        'rotate_angle',
+        'is_flip_horizontal',
+        'is_flip_vertical',
+        'filter_name',
     ];
 
     protected $casts = [
