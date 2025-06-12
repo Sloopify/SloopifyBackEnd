@@ -114,8 +114,10 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::get('get-friends' , 'getFriends');
 
         Route::post('search-friends' , 'searchFriends');
+
+        Route::get('get-personal-occasion-categories' , 'getPersonalOccasionCategories');
     
-        Route::get('get-personal-occasion-settings' , 'getPersonalOccasionSettings');
+        Route::post('get-personal-occasion-settings-by-category' , 'getPersonalOccasionSettingsByCategory');
 
         Route::get('get-user-places' , 'getUserPlaces');
 

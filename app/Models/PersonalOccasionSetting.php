@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\PersonalOccasionCategory;
 
 class PersonalOccasionSetting extends Model
 {
@@ -11,6 +12,7 @@ class PersonalOccasionSetting extends Model
     use HasFactory;
 
     protected $fillable = [
+        'personal_occasion_category_id',
         'name',
         'title',
         'description',
@@ -18,6 +20,11 @@ class PersonalOccasionSetting extends Model
         'mobile_icon',
         'status'
     ];
+
+    public function personalOccasionCategory()
+    {
+        return $this->belongsTo(PersonalOccasionCategory::class);
+    }
 
     public function getOccasionTypes()
     {

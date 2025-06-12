@@ -11,15 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('personal_occasion_settings', function (Blueprint $table) {
+        Schema::create('personal_occasion_categories', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('personal_occasion_category_id')->constrained('personal_occasion_categories')->cascadeOnDelete();
-            $table->enum('name', [
-                'new_job', 'job_promotion', 'graduation', 'started_studies', 
-                'relationship_status', 'moved_city', 'birthday', 'anniversary',
-                'achievement', 'travel', 'other'
-            ]);
-            $table->string('title')->nullable();
+            $table->string('name')->nullable();
             $table->string('description')->nullable();
             $table->string('web_icon')->nullable();
             $table->string('mobile_icon')->nullable();
@@ -33,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('personal_occasion_settings');
+        Schema::dropIfExists('personal_occasion_categories');
     }
 };

@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use App\Models\PersonalOccasionSetting;
+use App\Models\PersonalOccasionCategory;
 
 class PersonalOccasionSeeder extends Seeder
 {
@@ -13,8 +14,16 @@ class PersonalOccasionSeeder extends Seeder
      */
     public function run(): void
     {
+        // Get category IDs
+        $careerEducationCategory = PersonalOccasionCategory::where('name', 'career_education')->first();
+        $personalMilestonesCategory = PersonalOccasionCategory::where('name', 'personal_milestones')->first();
+        $relationshipsCategory = PersonalOccasionCategory::where('name', 'relationships')->first();
+        $lifeChangesCategory = PersonalOccasionCategory::where('name', 'life_changes')->first();
+        $celebrationsCategory = PersonalOccasionCategory::where('name', 'celebrations')->first();
+
         $occasions = [
             [
+                'personal_occasion_category_id' => $careerEducationCategory->id,
                 'name' => 'new_job',
                 'title' => 'New Job',
                 'description' => 'Started a new job or career opportunity',
@@ -23,6 +32,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $careerEducationCategory->id,
                 'name' => 'job_promotion',
                 'title' => 'Job Promotion',
                 'description' => 'Received a promotion or advancement at work',
@@ -31,6 +41,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $careerEducationCategory->id,
                 'name' => 'graduation',
                 'title' => 'Graduation',
                 'description' => 'Graduated from school, college, or university',
@@ -39,6 +50,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $careerEducationCategory->id,
                 'name' => 'started_studies',
                 'title' => 'Started Studies',
                 'description' => 'Began new educational journey or course',
@@ -47,6 +59,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $relationshipsCategory->id,
                 'name' => 'relationship_status',
                 'title' => 'Relationship Status',
                 'description' => 'Changed relationship status or milestone',
@@ -55,6 +68,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $lifeChangesCategory->id,
                 'name' => 'moved_city',
                 'title' => 'Moved City',
                 'description' => 'Relocated to a new city or place',
@@ -63,6 +77,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $celebrationsCategory->id,
                 'name' => 'birthday',
                 'title' => 'Birthday',
                 'description' => 'Celebrating another year of life',
@@ -71,6 +86,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $celebrationsCategory->id,
                 'name' => 'anniversary',
                 'title' => 'Anniversary',
                 'description' => 'Celebrating a special anniversary',
@@ -79,6 +95,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $personalMilestonesCategory->id,
                 'name' => 'achievement',
                 'title' => 'Achievement',
                 'description' => 'Accomplished a personal goal or milestone',
@@ -87,6 +104,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $personalMilestonesCategory->id,
                 'name' => 'travel',
                 'title' => 'Travel',
                 'description' => 'Went on a trip or travel adventure',
@@ -95,6 +113,7 @@ class PersonalOccasionSeeder extends Seeder
                 'status' => 'active'
             ],
             [
+                'personal_occasion_category_id' => $personalMilestonesCategory->id,
                 'name' => 'other',
                 'title' => 'Other',
                 'description' => 'Other personal occasions not listed above',
