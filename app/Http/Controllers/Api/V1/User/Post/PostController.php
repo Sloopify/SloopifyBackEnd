@@ -239,15 +239,16 @@ class PostController extends Controller
                 'mentions.place' => 'nullable|integer|exists:user_places,id',
                 'mentions.feeling' => 'nullable|string|max:100',
                 'mentions.activity' => 'nullable|string|max:100',
-                'media.*' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200', // 50MB
-                'media_order.*' => 'nullable|integer|min:1',
-                'auto_play.*' => 'nullable|boolean',
-                'apply_to_download.*' => 'nullable|boolean',
-                'is_rotate.*' => 'nullable|boolean',
-                'rotate_angle.*' => 'nullable|integer|min:0|max:360',
-                'is_flip_horizontal.*' => 'nullable|boolean',
-                'is_flip_vertical.*' => 'nullable|boolean',
-                'filter_name.*' => 'nullable|string|max:255',
+                'media' => 'nullable|array',
+                'media.*.file' => 'required|file|mimes:jpeg,png,gif,mp4,avi|max:51200',
+                'media.*.order' => 'nullable|integer|min:1',
+                'media.*.auto_play' => 'nullable|boolean',
+                'media.*.apply_to_download' => 'nullable|boolean',
+                'media.*.is_rotate' => 'nullable|boolean',
+                'media.*.rotate_angle' => 'nullable|integer|min:0|max:360',
+                'media.*.is_flip_horizontal' => 'nullable|boolean',
+                'media.*.is_flip_vertical' => 'nullable|boolean',
+                'media.*.filter_name' => 'nullable|string|max:255',
                 'gif_url' => 'nullable|url|max:2048',
                 
                 // Poll specific
@@ -281,7 +282,7 @@ class PostController extends Controller
                     ], 422);
                 }
 
-                if ($request->hasFile('media') || !empty($validatedData['gif_url'])) {
+                if (!empty($validatedData['media']) || !empty($validatedData['gif_url'])) {
                     return response()->json([
                         'status_code' => 422,
                         'success' => false,
@@ -304,7 +305,7 @@ class PostController extends Controller
             }
 
             // Custom validation for gif_url and media conflict
-            if (!empty($validatedData['gif_url']) && $request->hasFile('media')) {
+            if (!empty($validatedData['gif_url']) && !empty($validatedData['media'])) {
                 return response()->json([
                     'status_code' => 422,
                     'success' => false,
@@ -327,107 +328,23 @@ class PostController extends Controller
                 }
             }
 
-            // Custom validation for media arrays and media files consistency
-            if ($request->hasFile('media')) {
-                $mediaFiles = $request->file('media');
-                $mediaOrder = $request->input('media_order', []);
-                $autoPlay = $request->input('auto_play', []);
-                $applyToDownload = $request->input('apply_to_download', []);
-                $isRotate = $request->input('is_rotate', []);
-                $rotateAngle = $request->input('rotate_angle', []);
-                $isFlipHorizontal = $request->input('is_flip_horizontal', []);
-                $isFlipVertical = $request->input('is_flip_vertical', []);
-                $filterName = $request->input('filter_name', []);
-                
-                if (!empty($mediaOrder) && count($mediaFiles) !== count($mediaOrder)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'media_order' => ['The number of media_order values must match the number of media files.']]
-                    ], 422);
-                }
-
-                if (!empty($autoPlay) && count($mediaFiles) !== count($autoPlay)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'auto_play' => ['The number of auto_play values must match the number of media files.']]
-                    ], 422);
-                }
-
-                if (!empty($applyToDownload) && count($mediaFiles) !== count($applyToDownload)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'apply_to_download' => ['The number of apply_to_download values must match the number of media files.']]
-                    ], 422);
-                }
-
-                if (!empty($isRotate) && count($mediaFiles) !== count($isRotate)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'is_rotate' => ['The number of is_rotate values must match the number of media files.']]
-                    ], 422);
-                }
-
-                if (!empty($rotateAngle) && count($mediaFiles) !== count($rotateAngle)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'rotate_angle' => ['The number of rotate_angle values must match the number of media files.']]
-                    ], 422);
-                }
-
-                if (!empty($isFlipHorizontal) && count($mediaFiles) !== count($isFlipHorizontal)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'is_flip_horizontal' => ['The number of is_flip_horizontal values must match the number of media files.']]
-                    ], 422);
-                }
-
-                if (!empty($isFlipVertical) && count($mediaFiles) !== count($isFlipVertical)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'is_flip_vertical' => ['The number of is_flip_vertical values must match the number of media files.']]
-                    ], 422);
-                }
-
-                if (!empty($filterName) && count($mediaFiles) !== count($filterName)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'filter_name' => ['The number of filter_name values must match the number of media files.']]
-                    ], 422);
-                }
-
-                // Check for duplicate display orders
-                if (!empty($mediaOrder) && count($mediaOrder) !== count(array_unique($mediaOrder))) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
-                        'errors' => [
-                            'media_order' => ['Display order values must be unique for each media file.']]
-                    ], 422);
+            // Custom validation for media order uniqueness
+            if (!empty($validatedData['media'])) {
+                $orders = [];
+                foreach ($validatedData['media'] as $index => $mediaItem) {
+                    if (isset($mediaItem['order'])) {
+                        $order = $mediaItem['order'];
+                        if (in_array($order, $orders)) {
+                            return response()->json([
+                                'status_code' => 422,
+                                'success' => false,
+                                'message' => 'Validation failed',
+                                'errors' => [
+                                    "media.{$index}.order" => ['Display order values must be unique for each media file.']]
+                            ], 422);
+                        }
+                        $orders[] = $order;
+                    }
                 }
             }
 
@@ -633,16 +550,8 @@ class PostController extends Controller
             ]);
 
             // Handle media uploads
-            if ($request->hasFile('media')) {
-                $mediaOrder = $request->input('media_order', []);
-                $autoPlay = $request->input('auto_play', []);
-                $applyToDownload = $request->input('apply_to_download', []);
-                $isRotate = $request->input('is_rotate', []);
-                $rotateAngle = $request->input('rotate_angle', []);
-                $isFlipHorizontal = $request->input('is_flip_horizontal', []);
-                $isFlipVertical = $request->input('is_flip_vertical', []);
-                $filterName = $request->input('filter_name', []);
-                $this->handleMediaUploads($post, $request->file('media'), $mediaOrder, $autoPlay, $applyToDownload, $isRotate, $rotateAngle, $isFlipHorizontal, $isFlipVertical, $filterName);
+            if (!empty($validatedData['media'])) {
+                $this->handleMediaUploads($post, $validatedData['media']);
             }
 
             // Handle poll creation
@@ -702,51 +611,12 @@ class PostController extends Controller
         }
     }
 
-    private function handleMediaUploads($post, $files, $mediaOrder = [], $autoPlay = [], $applyToDownload = [], $isRotate = [], $rotateAngle = [], $isFlipHorizontal = [], $isFlipVertical = [], $filterName = [])
+    private function handleMediaUploads($post, $mediaItems)
     {
-        foreach ($files as $index => $file) {
+        foreach ($mediaItems as $index => $mediaItem) {
+            $file = $mediaItem['file'];
             $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
             $path = $file->storeAs('posts/' . $post->id, $filename, 'public');
-
-            // Use provided display order or fallback to auto-generated order
-            $displayOrder = !empty($mediaOrder) && isset($mediaOrder[$index]) 
-                ? (int)$mediaOrder[$index] 
-                : $index + 1;
-
-            // Use provided auto_play value or default to false
-            $autoPlayValue = !empty($autoPlay) && isset($autoPlay[$index]) 
-                ? (bool)$autoPlay[$index] 
-                : false;
-
-            // Use provided apply_to_download value or default to false
-            $applyToDownloadValue = !empty($applyToDownload) && isset($applyToDownload[$index]) 
-                ? (bool)$applyToDownload[$index] 
-                : false;
-
-            // Use provided is_rotate value or default to false
-            $isRotateValue = !empty($isRotate) && isset($isRotate[$index]) 
-                ? (bool)$isRotate[$index] 
-                : false;
-
-            // Use provided rotate_angle value or default to 0
-            $rotateAngleValue = !empty($rotateAngle) && isset($rotateAngle[$index]) 
-                ? (int)$rotateAngle[$index] 
-                : 0;
-
-            // Use provided is_flip_horizontal value or default to false
-            $isFlipHorizontalValue = !empty($isFlipHorizontal) && isset($isFlipHorizontal[$index]) 
-                ? (bool)$isFlipHorizontal[$index] 
-                : false;
-
-            // Use provided is_flip_vertical value or default to false
-            $isFlipVerticalValue = !empty($isFlipVertical) && isset($isFlipVertical[$index]) 
-                ? (bool)$isFlipVertical[$index] 
-                : false;
-
-            // Use provided filter_name value or default to null
-            $filterNameValue = !empty($filterName) && isset($filterName[$index]) 
-                ? $filterName[$index] 
-                : null;
 
             PostMedia::create([
                 'post_id' => $post->id,
@@ -757,15 +627,15 @@ class PostController extends Controller
                 'size' => $file->getSize(),
                 'path' => $path,
                 'url' => Storage::url($path),
-                'display_order' => $displayOrder,
-                'auto_play' => $autoPlayValue,
-                'apply_to_download' => $applyToDownloadValue,
-                'is_rotate' => $isRotateValue,
-                'rotate_angle' => $rotateAngleValue,
-                'is_flip_horizontal' => $isFlipHorizontalValue,
-                'is_flip_vertical' => $isFlipVerticalValue,
-                'metadata' => $this->extractMediaMetadata($file),
-                'filter_name' => $filterNameValue
+                'display_order' => $mediaItem['order'] ?? ($index + 1),
+                'auto_play' => $mediaItem['auto_play'] ?? false,
+                'apply_to_download' => $mediaItem['apply_to_download'] ?? false,
+                'is_rotate' => $mediaItem['is_rotate'] ?? false,
+                'rotate_angle' => $mediaItem['rotate_angle'] ?? 0,
+                'is_flip_horizontal' => $mediaItem['is_flip_horizontal'] ?? false,
+                'is_flip_vertical' => $mediaItem['is_flip_vertical'] ?? false,
+                'filter_name' => $mediaItem['filter_name'] ?? null,
+                'metadata' => $this->extractMediaMetadata($file)
             ]);
         }
     }
