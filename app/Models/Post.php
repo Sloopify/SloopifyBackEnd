@@ -35,6 +35,7 @@ class Post extends Model
 
     protected $casts = [
         'text_properties' => 'array',
+        'background_color' => 'array',
         'specific_friends' => 'array',
         'friend_except' => 'array',
         'mentions' => 'array',
