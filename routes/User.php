@@ -148,6 +148,16 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::post('/search-friends' , 'searchFriends');
 
+            Route::post('/get-user-places' , 'getUserPlaces');
+
+            Route::post('/search-user-places' , 'searchUserPlaces');
+
+            Route::post('/get-user-place-by-id' , 'getUserPlaceById');
+
+            Route::post('/create-user-place' , 'createUserPlace');
+
+            Route::post('/update-user-place' , 'updateUserPlace');
+
             Route::get('/get-stories', 'getStories');
 
             Route::get('/get-story-by-id', 'getStoryById');

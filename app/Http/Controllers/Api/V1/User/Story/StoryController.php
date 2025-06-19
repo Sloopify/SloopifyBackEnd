@@ -423,6 +423,83 @@ class StoryController extends Controller
             ], 500);
         }
     }
+ 
+    public function getUserPlaces(Request $request)
+    {
+        try {
+            $postController = app(PostController::class);
+            return $postController->getUserPlaces($request);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve user places',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function searchUserPlaces(Request $request)
+    {
+        try {
+            $postController = app(PostController::class);
+            return $postController->searchUserPlaces($request);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search user places',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getUserPlaceById(Request $request)
+    {
+        try {
+            $postController = app(PostController::class);
+            return $postController->getUserPlaceById($request);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve user place by id',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function createUserPlace(Request $request)
+    {
+        try {
+            $postController = app(PostController::class);
+            return $postController->createUserPlace($request);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to create user place',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updateUserPlace(Request $request)
+    {
+        try {
+            $postController = app(PostController::class);
+            return $postController->updateUserPlace($request);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update user place',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
 
 
 
