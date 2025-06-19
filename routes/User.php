@@ -144,9 +144,19 @@ Route::group(['prefix' => 'api/v1'], function () {
             // Story creation and management
             Route::post('/create-story', 'createStory');
 
-            Route::get('/get-friends' , 'getFriends');
+            Route::post('/get-friends' , 'getFriends');
 
             Route::post('/search-friends' , 'searchFriends');
+
+            Route::post('/get-user-places' , 'getUserPlaces');
+
+            Route::post('/search-user-places' , 'searchUserPlaces');
+
+            Route::post('/get-user-place-by-id' , 'getUserPlaceById');
+
+            Route::post('/create-user-place' , 'createUserPlace');
+
+            Route::post('/update-user-place' , 'updateUserPlace');
 
             Route::get('/get-stories', 'getStories');
 
