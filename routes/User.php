@@ -144,7 +144,7 @@ Route::group(['prefix' => 'api/v1'], function () {
             // Story creation and management
             Route::post('/create-story', 'createStory');
 
-            Route::get('/get-friends' , 'getFriends');
+            Route::post('/get-friends' , 'getFriends');
 
             Route::post('/search-friends' , 'searchFriends');
 

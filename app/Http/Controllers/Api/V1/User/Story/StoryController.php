@@ -394,12 +394,11 @@ class StoryController extends Controller
         }
     }
 
-    public function getFriends()
+    public function getFriends(Request $request)
     {
         try {
-           
             $postController = app(PostController::class);
-            return $postController->getFriends();
+            return $postController->getFriends($request);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -413,11 +412,8 @@ class StoryController extends Controller
     public function searchFriends(Request $request)
     {
         try {
-            $validatedData = $request->validate([
-                'search' => 'nullable|string|max:255',
-            ]);
             $postController = app(PostController::class);
-            return $postController->searchFriends($validatedData);
+            return $postController->searchFriends($request);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
