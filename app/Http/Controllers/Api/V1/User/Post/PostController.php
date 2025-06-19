@@ -840,24 +840,52 @@ class PostController extends Controller
         }
     }
 
-    public function getFeeling()
+    public function getFeeling(Request $request)
     {
         try {
-        $feelings = PostFeeling::where('status', 'active')->get();
-        if($feelings->isEmpty()) {
-            return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'No feelings found'
-            ], 404);
-        }
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            $feelings = PostFeeling::where('status', 'active')->paginate($perPage);
+            
+            if($feelings->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No feelings found'
+                ], 404);
+            }
+
+            $mappedFeelings = $feelings->getCollection()->map(function ($feeling) {
+                return $this->mapFeelings(collect([$feeling]))->first();
+            });
         
-        return response()->json([
-            'status_code' => 200,
-            'success' => true,
-            'message' => 'Feelings retrieved successfully',
-            'data' => $this->mapFeelings($feelings)
-        ], 200);
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Feelings retrieved successfully',
+                'data' => $mappedFeelings,
+                'pagination' => [
+                    'current_page' => $feelings->currentPage(),
+                    'last_page' => $feelings->lastPage(),
+                    'per_page' => $feelings->perPage(),
+                    'total' => $feelings->total(),
+                    'from' => $feelings->firstItem(),
+                    'to' => $feelings->lastItem(),
+                    'has_more_pages' => $feelings->hasMorePages()
+                ]
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -868,29 +896,57 @@ class PostController extends Controller
         }
     }
 
-    public function getActivityCategory()
+    public function getActivityCategory(Request $request)
     {
         try {
-            $categories = PostActivity::where('status', 'active')
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            // Get distinct categories with pagination
+            $activities = PostActivity::where('status', 'active')
+                ->select('category')
                 ->distinct()
-                ->pluck('category')
-                ->filter() 
-                ->values(); 
+                ->whereNotNull('category')
+                ->where('category', '!=', '')
+                ->paginate($perPage);
             
-            if($categories->isEmpty()) {
+            if($activities->isEmpty()) {
                 return response()->json([
                     'status_code' => 404,
                     'success' => false,
                     'message' => 'No activity categories found'
                 ], 404);
             }
+
+            // Extract categories from paginated results
+            $categories = $activities->getCollection()->pluck('category')->values();
             
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Activity categories retrieved successfully',
-                'data' => $categories
+                'data' => $categories,
+                'pagination' => [
+                    'current_page' => $activities->currentPage(),
+                    'last_page' => $activities->lastPage(),
+                    'per_page' => $activities->perPage(),
+                    'total' => $activities->total(),
+                    'from' => $activities->firstItem(),
+                    'to' => $activities->lastItem(),
+                    'has_more_pages' => $activities->hasMorePages()
+                ]
             ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -905,10 +961,17 @@ class PostController extends Controller
     {
        try {
         $validatedData = $request->validate([
-        'category' => 'required|string|max:255'
+            'category' => 'required|string|max:255',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:100'
         ]);
 
-       $activities = PostActivity::where('category', $validatedData['category'])->get();
+        $perPage = $validatedData['per_page'] ?? 20;
+
+        $activities = PostActivity::where('category', $validatedData['category'])
+            ->where('status', 'active')
+            ->paginate($perPage);
+            
         if($activities->isEmpty()) {
             return response()->json([
                 'status_code' => 404,
@@ -917,12 +980,32 @@ class PostController extends Controller
             ], 404);
         }
 
+        $mappedActivities = $activities->getCollection()->map(function ($activity) {
+            return $this->mapActivities(collect([$activity]))->first();
+        });
+
         return response()->json([
             'status_code' => 200,
             'success' => true,
             'message' => 'Activities retrieved successfully by category name',
-            'data' => $this->mapActivities($activities)
+            'data' => $mappedActivities,
+            'pagination' => [
+                'current_page' => $activities->currentPage(),
+                'last_page' => $activities->lastPage(),
+                'per_page' => $activities->perPage(),
+                'total' => $activities->total(),
+                'from' => $activities->firstItem(),
+                'to' => $activities->lastItem(),
+                'has_more_pages' => $activities->hasMorePages()
+            ]
         ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -936,25 +1019,52 @@ class PostController extends Controller
     public function searchFeeling(Request $request)
     {
         try {
-        $validatedData = $request->validate([
-            'search' => 'required|string|max:255'
-        ]);
+            $validatedData = $request->validate([
+                'search' => 'required|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
 
-        $feelings = PostFeeling::where('name', 'like', '%' . $validatedData['search'] . '%')->get();
-        if($feelings->isEmpty()) {
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            $feelings = PostFeeling::where('name', 'like', '%' . $validatedData['search'] . '%')
+                ->where('status', 'active')
+                ->paginate($perPage);
+                
+            if($feelings->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No feelings found'
+                ], 404);
+            }
+
+            $mappedFeelings = $feelings->getCollection()->map(function ($feeling) {
+                return $this->mapFeelings(collect([$feeling]))->first();
+            });
+
             return response()->json([
-                'status_code' => 404,
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Feelings retrieved successfully',
+                'data' => $mappedFeelings,
+                'pagination' => [
+                    'current_page' => $feelings->currentPage(),
+                    'last_page' => $feelings->lastPage(),
+                    'per_page' => $feelings->perPage(),
+                    'total' => $feelings->total(),
+                    'from' => $feelings->firstItem(),
+                    'to' => $feelings->lastItem(),
+                    'has_more_pages' => $feelings->hasMorePages()
+                ]
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
                 'success' => false,
-                'message' => 'No feelings found'
-            ], 404);
-        }   
-
-        return response()->json([
-            'status_code' => 200,
-            'success' => true,
-            'message' => 'Feelings retrieved successfully',
-            'data' => $this->mapFeelings($feelings)
-        ], 200);
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -969,17 +1079,23 @@ class PostController extends Controller
     {
         try {
             $validatedData = $request->validate([
-                'search' => 'required|string|max:255'
+                'search' => 'required|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
             ]);
 
-            $categories = PostActivity::where('status', 'active')
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            // Get distinct categories with pagination
+            $activities = PostActivity::where('status', 'active')
                 ->where('category', 'like', '%' . $validatedData['search'] . '%')
+                ->select('category')
                 ->distinct()
-                ->pluck('category')
-                ->filter()
-                ->values();
+                ->whereNotNull('category')
+                ->where('category', '!=', '')
+                ->paginate($perPage);
                 
-            if($categories->isEmpty()) {
+            if($activities->isEmpty()) {
                 return response()->json([
                     'status_code' => 404,
                     'success' => false,
@@ -987,12 +1103,31 @@ class PostController extends Controller
                 ], 404);
             }
 
+            // Extract categories from paginated results
+            $categories = $activities->getCollection()->pluck('category')->values();
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Categories retrieved successfully',
-                'data' => $categories
+                'data' => $categories,
+                'pagination' => [
+                    'current_page' => $activities->currentPage(),
+                    'last_page' => $activities->lastPage(),
+                    'per_page' => $activities->perPage(),
+                    'total' => $activities->total(),
+                    'from' => $activities->firstItem(),
+                    'to' => $activities->lastItem(),
+                    'has_more_pages' => $activities->hasMorePages()
+                ]
             ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -1006,25 +1141,45 @@ class PostController extends Controller
     public function searchActivity(Request $request)
     {
         try {
-        $validatedData = $request->validate([
-            'search' => 'required|string|max:255'
-        ]);
+            $validatedData = $request->validate([
+                'search' => 'required|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
 
-        $activities = PostActivity::where('name', 'like', '%' . $validatedData['search'] . '%')->get();
-        if($activities->isEmpty()) {
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            $activities = PostActivity::where('name', 'like', '%' . $validatedData['search'] . '%')
+                ->where('status', 'active')
+                ->paginate($perPage);
+
+            if($activities->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No activities found'
+                ], 404);
+            }
+
+            $mappedActivities = $activities->getCollection()->map(function ($activity) {
+                return $this->mapActivities(collect([$activity]))->first();
+            });
+
             return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'No activities found'
-            ], 404);
-        }
-
-        return response()->json([
-            'status_code' => 200,
-            'success' => true,
-            'message' => 'Activities retrieved successfully',
-            'data' => $this->mapActivities($activities)
-        ], 200);
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Activities retrieved successfully',
+                'data' => $mappedActivities,
+                'pagination' => [
+                    'current_page' => $activities->currentPage(),
+                    'last_page' => $activities->lastPage(),
+                    'per_page' => $activities->perPage(),
+                    'total' => $activities->total(),
+                    'from' => $activities->firstItem(),
+                    'to' => $activities->lastItem(),
+                    'has_more_pages' => $activities->hasMorePages()
+                ]
+            ], 200);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -1035,10 +1190,16 @@ class PostController extends Controller
         }
     }
 
-    public function getFriends()
+    public function getFriends(Request $request)
     {
         try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
             $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
             
             if (!$user) {
                 return response()->json([
@@ -1061,8 +1222,16 @@ class PostController extends Controller
                 return $friendship->user_id == $user->id ? $friendship->friend_id : $friendship->user_id;
             });
 
-            // Get all friends
-            $friends = User::whereIn('id', $friendIds)->get();
+            // Get friends with pagination
+            $friends = User::whereIn('id', $friendIds)->paginate($perPage);
+
+            if($friends->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No friends found'
+                ], 404);
+            }
 
             // Get specific friends IDs
             $specificFriendIds = \App\Models\SpecificFriends::where('user_id', $user->id)
@@ -1075,20 +1244,36 @@ class PostController extends Controller
                 ->toArray();
 
             // Map friends with specific/except flags
-            $mappedFriends = $friends->map(function ($friend) use ($specificFriendIds, $friendExceptIds) {
+            $mappedFriends = $friends->getCollection()->map(function ($friend) use ($specificFriendIds, $friendExceptIds) {
                 $friendData = $this->mapUserDetails($friend);
                 $friendData['is_specific_friend'] = in_array($friend->id, $specificFriendIds);
                 $friendData['is_friend_except'] = in_array($friend->id, $friendExceptIds);
                 return $friendData;
-            })->values();
+            });
 
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Friends retrieved successfully',
-                'data' => $mappedFriends
+                'data' => $mappedFriends,
+                'pagination' => [
+                    'current_page' => $friends->currentPage(),
+                    'last_page' => $friends->lastPage(),
+                    'per_page' => $friends->perPage(),
+                    'total' => $friends->total(),
+                    'from' => $friends->firstItem(),
+                    'to' => $friends->lastItem(),
+                    'has_more_pages' => $friends->hasMorePages()
+                ]
             ], 200);
 
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -1103,10 +1288,13 @@ class PostController extends Controller
     {
         try {
             $validatedData = $request->validate([
-                'search' => 'required|string|max:255'
+                'search' => 'required|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
             ]);
 
             $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
 
             if (!$user) {
                 return response()->json([
@@ -1129,7 +1317,7 @@ class PostController extends Controller
                 return $friendship->user_id == $user->id ? $friendship->friend_id : $friendship->user_id;
             });
 
-            // Search among friends by first_name, last_name, or email
+            // Search among friends by first_name, last_name, or email with pagination
             $friends = User::whereIn('id', $friendIds)
                 ->where(function($query) use ($validatedData) {
                     $query->where('first_name', 'like', '%' . $validatedData['search'] . '%')
@@ -1137,7 +1325,7 @@ class PostController extends Controller
                           ->orWhere('email', 'like', '%' . $validatedData['search'] . '%')
                           ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ['%' . $validatedData['search'] . '%']);
                 })
-                ->get();
+                ->paginate($perPage);
 
             if ($friends->isEmpty()) {
                 return response()->json([
@@ -1158,18 +1346,27 @@ class PostController extends Controller
                 ->toArray();
 
             // Map friends with specific/except flags
-            $mappedFriends = $friends->map(function ($friend) use ($specificFriendIds, $friendExceptIds) {
+            $mappedFriends = $friends->getCollection()->map(function ($friend) use ($specificFriendIds, $friendExceptIds) {
                 $friendData = $this->mapUserDetails($friend);
                 $friendData['is_specific_friend'] = in_array($friend->id, $specificFriendIds);
                 $friendData['is_friend_except'] = in_array($friend->id, $friendExceptIds);
                 return $friendData;
-            })->values();
+            });
 
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Friends found successfully',
-                'data' => $mappedFriends
+                'data' => $mappedFriends,
+                'pagination' => [
+                    'current_page' => $friends->currentPage(),
+                    'last_page' => $friends->lastPage(),
+                    'per_page' => $friends->perPage(),
+                    'total' => $friends->total(),
+                    'from' => $friends->firstItem(),
+                    'to' => $friends->lastItem(),
+                    'has_more_pages' => $friends->hasMorePages()
+                ]
             ], 200);
 
         } catch (ValidationException $e) {
@@ -1189,10 +1386,18 @@ class PostController extends Controller
         }
     }
 
-    public function getPersonalOccasionCategories()
+    public function getPersonalOccasionCategories(Request $request)
     {
         try{
-            $personalOccasionCategories = PersonalOccasionCategory::where('status', 'active')->get();
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            $personalOccasionCategories = PersonalOccasionCategory::where('status', 'active')
+                ->paginate($perPage);
 
             if($personalOccasionCategories->isEmpty()) {
                 return response()->json([
@@ -1202,12 +1407,32 @@ class PostController extends Controller
                 ], 404);
             }
 
+            $mappedCategories = $personalOccasionCategories->getCollection()->map(function ($category) {
+                return $this->mapPersonalOccasionCategories(collect([$category]))->first();
+            });
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Personal occasion categories retrieved successfully',
-                'data' => $this->mapPersonalOccasionCategories($personalOccasionCategories)
+                'data' => $mappedCategories,
+                'pagination' => [
+                    'current_page' => $personalOccasionCategories->currentPage(),
+                    'last_page' => $personalOccasionCategories->lastPage(),
+                    'per_page' => $personalOccasionCategories->perPage(),
+                    'total' => $personalOccasionCategories->total(),
+                    'from' => $personalOccasionCategories->firstItem(),
+                    'to' => $personalOccasionCategories->lastItem(),
+                    'has_more_pages' => $personalOccasionCategories->hasMorePages()
+                ]
             ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -1218,12 +1443,20 @@ class PostController extends Controller
         }
     }
 
-    public function getPersonalOccasionCategoriesWithOccasions()
+    public function getPersonalOccasionCategoriesWithOccasions(Request $request)
     {
         try{
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $perPage = $validatedData['per_page'] ?? 20;
+
             $personalOccasionCategories = PersonalOccasionCategory::with(['personalOccasionSettings' => function($query) {
                 $query->where('status', 'active');
-            }])->where('status', 'active')->get();
+            }])->where('status', 'active')
+            ->paginate($perPage);
 
             if($personalOccasionCategories->isEmpty()) {
                 return response()->json([
@@ -1233,12 +1466,32 @@ class PostController extends Controller
                 ], 404);
             }
 
+            $mappedCategories = $personalOccasionCategories->getCollection()->map(function ($category) {
+                return $this->mapPersonalOccasionCategories(collect([$category]))->first();
+            });
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Personal occasion categories with occasions retrieved successfully',
-                'data' => $this->mapPersonalOccasionCategories($personalOccasionCategories)
+                'data' => $mappedCategories,
+                'pagination' => [
+                    'current_page' => $personalOccasionCategories->currentPage(),
+                    'last_page' => $personalOccasionCategories->lastPage(),
+                    'per_page' => $personalOccasionCategories->perPage(),
+                    'total' => $personalOccasionCategories->total(),
+                    'from' => $personalOccasionCategories->firstItem(),
+                    'to' => $personalOccasionCategories->lastItem(),
+                    'has_more_pages' => $personalOccasionCategories->hasMorePages()
+                ]
             ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -1254,8 +1507,15 @@ class PostController extends Controller
         try{
             $validatedData = $request->validate([
                 'category_id' => 'required|exists:personal_occasion_categories,id',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
             ]);
-            $personalOccasionSettings = PersonalOccasionSetting::where('status', 'active')->where('personal_occasion_category_id', $validatedData['category_id'])->get();
+
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            $personalOccasionSettings = PersonalOccasionSetting::where('status', 'active')
+                ->where('personal_occasion_category_id', $validatedData['category_id'])
+                ->paginate($perPage);
             
             if($personalOccasionSettings->isEmpty()) {
                 return response()->json([
@@ -1265,12 +1525,32 @@ class PostController extends Controller
                 ], 404);
             }
 
+            $mappedSettings = $personalOccasionSettings->getCollection()->map(function ($setting) {
+                return $this->mapPersonalOccasionSettings(collect([$setting]))->first();
+            });
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Personal occasion settings retrieved successfully',
-                'data' => $this->mapPersonalOccasionSettings($personalOccasionSettings)
+                'data' => $mappedSettings,
+                'pagination' => [
+                    'current_page' => $personalOccasionSettings->currentPage(),
+                    'last_page' => $personalOccasionSettings->lastPage(),
+                    'per_page' => $personalOccasionSettings->perPage(),
+                    'total' => $personalOccasionSettings->total(),
+                    'from' => $personalOccasionSettings->firstItem(),
+                    'to' => $personalOccasionSettings->lastItem(),
+                    'has_more_pages' => $personalOccasionSettings->hasMorePages()
+                ]
             ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -1281,10 +1561,19 @@ class PostController extends Controller
         }
     }
 
-    public function getUserPlaces()
+    public function getUserPlaces(Request $request)
     {
         try{
-            $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)->where('status', 'active')->get();
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)
+                ->where('status', 'active')
+                ->paginate($perPage);
 
             if($userPlaces->isEmpty()) {
                 return response()->json([
@@ -1294,12 +1583,32 @@ class PostController extends Controller
                 ], 404);
             }
 
+            $mappedUserPlaces = $userPlaces->getCollection()->map(function ($userPlace) {
+                return $this->mapUserPlaces($userPlace);
+            });
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'User places retrieved successfully',
-                'data' => $this->mapUserPlaces($userPlaces)
+                'data' => $mappedUserPlaces,
+                'pagination' => [
+                    'current_page' => $userPlaces->currentPage(),
+                    'last_page' => $userPlaces->lastPage(),
+                    'per_page' => $userPlaces->perPage(),
+                    'total' => $userPlaces->total(),
+                    'from' => $userPlaces->firstItem(),
+                    'to' => $userPlaces->lastItem(),
+                    'has_more_pages' => $userPlaces->hasMorePages()
+                ]
             ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
@@ -1310,6 +1619,90 @@ class PostController extends Controller
         }
     }
 
+    public function searchUserPlaces(Request $request)
+    {
+        try{
+            $validatedData = $request->validate([
+                'search' => 'required|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)
+                ->where('status', 'active')
+                ->where('name', 'like', '%' . $validatedData['search'] . '%')
+                ->paginate($perPage);
+
+            if($userPlaces->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No user places found'
+                ], 404);
+            }
+
+            $mappedUserPlaces = $userPlaces->getCollection()->map(function ($userPlace) {
+                return $this->mapUserPlaces($userPlace);
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User places retrieved successfully',
+                'data' => $mappedUserPlaces,
+                'pagination' => [
+                    'current_page' => $userPlaces->currentPage(),
+                    'last_page' => $userPlaces->lastPage(),
+                    'per_page' => $userPlaces->perPage(),
+                    'total' => $userPlaces->total(),
+                    'from' => $userPlaces->firstItem(),
+                    'to' => $userPlaces->lastItem(),
+                    'has_more_pages' => $userPlaces->hasMorePages()
+                ]
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        }
+    }
+
+    public function getUserPlaceById(Request $request)
+    {
+        try{
+            $validatedData = $request->validate([
+                'place_id' => 'required|exists:user_places,id',
+            ]);
+            $userPlace = UserPlace::where('user_id', Auth::guard('user')->user()->id)->findOrFail($validatedData['place_id']);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User place retrieved successfully',
+                'data' => $this->mapUserPlaces($userPlace)
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve user place',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
     public function createUserPlace(Request $request)
     {
         try{
@@ -1350,37 +1743,6 @@ class PostController extends Controller
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to create user place',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function getUserPlaceById(Request $request)
-    {
-        try{
-            $validatedData = $request->validate([
-                'place_id' => 'required|exists:user_places,id',
-            ]);
-            $userPlace = UserPlace::where('user_id', Auth::guard('user')->user()->id)->findOrFail($validatedData['place_id']);
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'User place retrieved successfully',
-                'data' => $this->mapUserPlaces($userPlace)
-            ], 200);
-        } catch (ValidationException $e) {
-            return response()->json([
-                'status_code' => 422,
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to retrieve user place',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -1431,44 +1793,14 @@ class PostController extends Controller
         }
     }
 
-    public function searchUserPlaces(Request $request)
-    {
-        try{
-            $validatedData = $request->validate([
-                'search' => 'required|string|max:255',
-            ]);
-            $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)->where('status', 'active')->where('name', 'like', '%' . $validatedData['search'] . '%')->get();
-
-            if($userPlaces->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No user places found'
-                ], 404);
-            }
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'User places retrieved successfully',
-                'data' => $this->mapUserPlaces($userPlaces)
-            ], 200);
-        } catch (ValidationException $e) {
-            return response()->json([
-                'status_code' => 422,
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        }
-    }
-
-
-
-
-
     
 
+
+
+
+
+
+   
 
 
     public function update(Request $request, $id)
