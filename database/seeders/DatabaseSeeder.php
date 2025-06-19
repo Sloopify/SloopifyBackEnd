@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
             PersonalOccasionCategorySeeder::class,
             PersonalOccasionSeeder::class,
             UserPlaceSeeder::class,
+            StoryAudioSeeder::class,
         ]);
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\User\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\User\Post\PostController;
 use App\Http\Controllers\Api\V1\User\Friend\FriendController;
 use App\Http\Controllers\Api\V1\User\Settings\Sessions\SessionController;
+use App\Http\Controllers\Api\V1\User\Story\StoryController;
 
 
 //=================================== User Auth Routes =============================
@@ -97,9 +98,9 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/create-post' , 'createPost');
 
-        Route::get('/get-feeling' , 'getFeeling');
+        Route::post('/get-feeling' , 'getFeeling');
 
-        Route::get('/get-activity-category' , 'getActivityCategory');
+        Route::post('/get-activity-category' , 'getActivityCategory');
 
         Route::post('/get-activity-by-category-name' , 'getActivityByCategoryName');
 
@@ -111,15 +112,17 @@ Route::group(['prefix' => 'api/v1'], function () {
         
         Route::get('check-server-capabilities' , 'checkServerCapabilities');
 
-        Route::get('get-friends' , 'getFriends');
+        Route::post('get-friends' , 'getFriends');
 
         Route::post('search-friends' , 'searchFriends');
 
-        Route::get('get-personal-occasion-categories' , 'getPersonalOccasionCategories');
+        Route::post('get-personal-occasion-categories' , 'getPersonalOccasionCategories');
+
+        Route::post('get-personal-occasion-categories-with-occasions' , 'getPersonalOccasionCategoriesWithOccasions');
     
         Route::post('get-personal-occasion-settings-by-category' , 'getPersonalOccasionSettingsByCategory');
 
-        Route::get('get-user-places' , 'getUserPlaces');
+        Route::post('get-user-places' , 'getUserPlaces');
 
         Route::post('create-user-place' , 'createUserPlace');
 
@@ -130,6 +133,50 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('search-user-places' , 'searchUserPlaces');
 
       });
+    });
+
+    //=================================== User Stories =============================
+
+    Route::group(['prefix' => 'stories', 'middleware' => ['user.auth']], function () {
+        
+        Route::group(['controller' => StoryController::class], function () {
+
+            // Story creation and management
+            Route::post('/create-story', 'createStory');
+
+            Route::get('/get-friends' , 'getFriends');
+
+            Route::post('/search-friends' , 'searchFriends');
+
+            Route::get('/get-stories', 'getStories');
+
+            Route::get('/get-story-by-id', 'getStoryById');
+
+            Route::delete('/delete-story', 'deleteStory');
+            
+            // Story interactions
+            Route::get('/get-story-viewers', 'getStoryViewers');
+
+            Route::post('/reply-to-story', 'replyToStory');
+
+            Route::get('/get-story-replies', 'getStoryReplies');
+            
+            // Story polls
+            Route::post('/vote-story-poll', 'voteStoryPoll');
+
+            Route::get('/get-story-poll-results', 'getStoryPollResults');
+            
+            // Story audio
+            Route::get('/audio/available', 'getStoryAudio');
+            
+            // Story privacy and settings
+            Route::post('/mute-story-notifications', 'muteStoryNotifications');
+
+            Route::post('/hide-story', 'hideStory');
+
+            Route::post('/unhide-story', 'unhideStory');
+
+        });
     });
 
     //=================================== User Friends =============================
