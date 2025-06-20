@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\V1\User\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Api\V1\User\AuthController;
+use App\Http\Controllers\Api\V1\User\Auth\AuthController;
 use Illuminate\Http\Request;
 use Exception;
 use Illuminate\Support\Facades\Hash;
@@ -14,6 +14,7 @@ use App\Models\Otp;
 use Illuminate\Validation\ValidationException;
 use App\Models\Interest;
 use App\Services\SessionManagementService;
+use Illuminate\Support\Facades\DB;
 
 class RegisterController extends Controller
 {
@@ -54,30 +55,38 @@ class RegisterController extends Controller
     public function createAccount(Request $request)
     {
         try{
-        $validatedData = $request->validate([
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:8',
-            'phone' => 'required|string|unique:users,phone|regex:/^\+[1-9]\d{1,14}$/',
-        ]);
+            $validatedData = $request->validate([
+                'first_name' => 'required|string|max:255',
+                'last_name' => 'required|string|max:255',
+                'email' => 'required|email|unique:users,email',
+                'password' => 'required|string|min:8',
+                'phone' => 'required|string|unique:users,phone|regex:/^\+[1-9]\d{1,14}$/',
+            ]);
 
-           $user = User::create([
-            'first_name' => $validatedData['first_name'],
-            'last_name' => $validatedData['last_name'],
-            'email' => $validatedData['email'],
-            'password' => Hash::make($validatedData['password']),
-            'phone' => $validatedData['phone'],
-            'referral_code' => Str::random(6),
-           ]);
-           
+            // Use database transaction to ensure rollback if any error occurs
+            $sessionService = $this->sessionService;
+            $result = DB::transaction(function () use ($validatedData, $sessionService) {
+                $user = User::create([
+                    'first_name' => $validatedData['first_name'],
+                    'last_name' => $validatedData['last_name'],
+                    'email' => $validatedData['email'],
+                    'password' => Hash::make($validatedData['password']),
+                    'phone' => $validatedData['phone'],
+                    'referral_code' => Str::random(6),
+                ]);
 
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Account created successfully',
-                'data' => (new AuthController())->mapUserDetails($user)
-            ], 200);
+                // Map user details and return the response data
+                $userDetails = (new AuthController($sessionService))->mapUserDetails($user);
+                
+                return [
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Account created successfully',
+                    'data' => $userDetails
+                ];
+            });
+
+            return response()->json($result, 200);
         }
         catch (ValidationException $e) {
             return response()->json([
