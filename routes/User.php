@@ -158,6 +158,10 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::post('/update-user-place' , 'updateUserPlace');
 
+            Route::post('/get-feeling' , 'getFeeling');
+
+            Route::post('/search-feeling' , 'searchFeeling');
+
             Route::get('/get-stories', 'getStories');
 
             Route::get('/get-story-by-id', 'getStoryById');

@@ -499,6 +499,38 @@ class StoryController extends Controller
         }
     }
 
+    public function getFeeling(Request $request)
+    {
+        try {
+            $postController = app(PostController::class);
+            return $postController->getFeeling($request);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve feeling',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function searchFeeling(Request $request)
+    {
+        try {
+            $postController = app(PostController::class);
+            return $postController->searchFeeling($request);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search feeling',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 
