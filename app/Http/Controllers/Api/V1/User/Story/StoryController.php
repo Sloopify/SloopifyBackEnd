@@ -93,6 +93,49 @@ class StoryController extends Controller
          ];
     }
 
+    private function mapStoryAudio($audio, $user = null)
+    {
+        return [
+            'id' => $audio->id,
+            'name' => $audio->name,
+            'filename' => $audio->filename,
+            'file_url' => $audio->path ? asset('storage/' . $audio->path) : null,
+            'duration' => $audio->duration,
+            'duration_formatted' => $this->formatDuration($audio->duration),
+            'file_size' => $audio->file_size,
+            'file_size_formatted' => $this->formatFileSize($audio->file_size),
+            'mime_type' => $audio->mime_type,
+            'image' => $audio->image ? asset('storage/' . $audio->image) : null,
+            'category' => $audio->category,
+            'status' => $audio->status,
+            'created_at' => $audio->created_at,
+            'updated_at' => $audio->updated_at
+        ];
+    }
+
+    private function formatDuration($seconds)
+    {
+        if (!$seconds) return '00:00';
+        
+        $minutes = floor($seconds / 60);
+        $remainingSeconds = $seconds % 60;
+        
+        return sprintf('%02d:%02d', $minutes, $remainingSeconds);
+    }
+
+    private function formatFileSize($bytes)
+    {
+        if ($bytes == 0) return '0 B';
+        
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $power = floor(log($bytes, 1024));
+        $power = min($power, count($units) - 1);
+        
+        $size = $bytes / pow(1024, $power);
+        
+        return round($size, 2) . ' ' . $units[$power];
+    }
+
     public function createStory(Request $request)
     {
         try {
@@ -360,40 +403,7 @@ class StoryController extends Controller
         return $metadata;
     }
 
-    public function getStoryAudio()
-    {
-        try {
-            $audioFiles = StoryAudio::active()->get();
-
-            $mappedAudio = $audioFiles->map(function ($audio) {
-                return [
-                    'id' => $audio->id,
-                    'name' => $audio->name,
-                    'url' => $audio->full_url,
-                    'duration' => $audio->duration,
-                    'duration_formatted' => $audio->duration_formatted,
-                    'features' => $audio->features,
-                    'category' => $audio->category
-                ];
-            });
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Story audio retrieved successfully',
-                'data' => $mappedAudio
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to retrieve story audio',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
+   
     public function getFriends(Request $request)
     {
         try {
@@ -531,7 +541,94 @@ class StoryController extends Controller
         }
     }
 
+    public function getStoryAudio(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
 
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $audioFiles = StoryAudio::active()->paginate($perPage);
+
+            $mappedAudio = $audioFiles->map(function ($audio) use ($user) {
+                return $this->mapStoryAudio($audio, $user);
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Story audio retrieved successfully',
+                'data' => $mappedAudio,
+                'pagination' => [
+                    'current_page' => $audioFiles->currentPage(),
+                    'last_page' => $audioFiles->lastPage(),
+                    'per_page' => $audioFiles->perPage(),
+                    'total' => $audioFiles->total(),
+                    'from' => $audioFiles->firstItem(),
+                    'to' => $audioFiles->lastItem(),
+                    'has_more_pages' => $audioFiles->hasMorePages()
+                ]
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve story audio',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function searchStoryAudio(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'search' => 'nullable|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $audioFiles = StoryAudio::active()->where('name', 'like', '%' . $validatedData['search'] . '%')->paginate($perPage);
+
+            $mappedAudio = $audioFiles->map(function ($audio) use ($user) {
+                return $this->mapStoryAudio($audio, $user);
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Story audio retrieved successfully',
+                'data' => $mappedAudio,
+                'pagination' => [
+                    'current_page' => $audioFiles->currentPage(),
+                    'last_page' => $audioFiles->lastPage(),
+                    'per_page' => $audioFiles->perPage(),
+                    'total' => $audioFiles->total(),
+                    'from' => $audioFiles->firstItem(),
+                    'to' => $audioFiles->lastItem(),
+                    'has_more_pages' => $audioFiles->hasMorePages()
+                ]
+            ], 200);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search story audio',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+    
 
 
 
