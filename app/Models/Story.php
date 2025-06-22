@@ -29,7 +29,8 @@ class Story extends Model
         'audio_element',
         'poll_element',
         'expires_at',
-        'status'
+        'status',
+        'is_story_muted_notification'
     ];
 
     protected $casts = [
@@ -45,7 +46,8 @@ class Story extends Model
         'audio_element' => 'array',
         'poll_element' => 'array',
         'expires_at' => 'datetime',
-        'is_video_muted' => 'boolean'
+        'is_video_muted' => 'boolean',
+        'is_story_muted_notification' => 'boolean'
     ];
 
     // Relationships

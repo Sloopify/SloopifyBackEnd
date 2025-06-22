@@ -23,7 +23,7 @@ return new class extends Migration
             // Privacy settings (same as posts but without only_me)
             $table->enum('privacy', ['public', 'friends', 'specific_friends', 'friend_except']);
             $table->json('specific_friends')->nullable(); // array of user IDs when privacy is specific_friends
-            $table->json('friend_except')->nullable(); // array of user IDs to exclude when privacy is friend_except
+            $table->json('friend_except')->nullable(); 
             
             // Story-specific features
             $table->string('gif_url')->nullable();
@@ -42,6 +42,8 @@ return new class extends Migration
             $table->timestamp('expires_at');
             $table->enum('status', ['active', 'expired', 'deleted'])->default('active');
             
+            $table->boolean('is_story_muted_notification')->default(false);
+
             $table->timestamps();
             $table->softDeletes();
             
