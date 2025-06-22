@@ -626,9 +626,290 @@ class StoryController extends Controller
         }
     }
 
+    public function getStoryViewers(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'required|integer|exists:stories,id',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $story = Story::where('user_id', $user->id)->findOrFail($validatedData['story_id']);
+
+            $viewers = StoryView::with('viewer')
+                ->where('story_id', $story->id)
+                ->orderBy('viewed_at', 'desc')
+                ->paginate($perPage);
+
+            $mappedViewers = $viewers->map(function ($view) use ($story) {
+                // Get replies from this viewer for this story
+                $replies = StoryReply::with('user')
+                    ->where('story_id', $story->id)
+                    ->where('user_id', $view->viewer_id)
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+
+                $mappedReplies = $replies->map(function ($reply) {
+                    return [
+                        'id' => $reply->id,
+                        'reply_text' => $reply->reply_text,
+                        'reply_media_url' => $reply->reply_media_url,
+                        'reply_type' => $reply->reply_type,
+                        'emoji' => $reply->emoji,
+                        'created_at' => $reply->created_at
+                    ];
+                });
+
+                return [
+                    'user' => $this->mapUserDetails($view->viewer),
+                    'viewed_at' => $view->viewed_at,
+                    'replies' => $mappedReplies
+                ];
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Story viewers retrieved successfully',
+                'data' => $mappedViewers,
+                'count' => $viewers->total(),
+                'pagination' => [
+                    'current_page' => $viewers->currentPage(),
+                    'last_page' => $viewers->lastPage(),
+                    'per_page' => $viewers->perPage(),
+                    'total' => $viewers->total(),
+                    'from' => $viewers->firstItem(),
+                    'to' => $viewers->lastItem(),
+                    'has_more_pages' => $viewers->hasMorePages()
+                ]
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve story viewers',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function searchStoryViewers(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'required|integer|exists:stories,id',
+                'search' => 'nullable|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $story = Story::where('user_id', $user->id)->findOrFail($validatedData['story_id']);
+            $search = $validatedData['search'] ?? null;
+
+                         $viewers = StoryView::with('viewer')
+                 ->where('story_id', $story->id)
+                 ->whereHas('viewer', function ($query) use ($search) {
+                     if ($search) {
+                         $query->where(function ($q) use ($search) {
+                             $q->where('first_name', 'like', '%' . $search . '%')
+                               ->orWhere('last_name', 'like', '%' . $search . '%')
+                               ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ['%' . $search . '%']);
+                         });
+                     }
+                 })
+                 ->orderBy('viewed_at', 'desc')
+                 ->paginate($perPage);
+
+            $mappedViewers = $viewers->map(function ($view) use ($story) {
+                // Get replies from this viewer for this story
+                $replies = StoryReply::with('user')
+                    ->where('story_id', $story->id)
+                    ->where('user_id', $view->viewer_id)
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+
+                $mappedReplies = $replies->map(function ($reply) {
+                    return [
+                        'id' => $reply->id,
+                        'reply_text' => $reply->reply_text,
+                        'reply_media_url' => $reply->reply_media_url,
+                        'reply_type' => $reply->reply_type,
+                        'emoji' => $reply->emoji,
+                        'created_at' => $reply->created_at
+                    ];
+                });
+
+                return [
+                    'user' => $this->mapUserDetails($view->viewer),
+                    'viewed_at' => $view->viewed_at,
+                    'replies' => $mappedReplies
+                ];
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Story viewers retrieved successfully',
+                'data' => $mappedViewers,
+                'pagination' => [
+                    'current_page' => $viewers->currentPage(),
+                    'last_page' => $viewers->lastPage(),
+                    'per_page' => $viewers->perPage(),
+                    'total' => $viewers->total(),
+                    'from' => $viewers->firstItem(),
+                    'to' => $viewers->lastItem(),
+                    'has_more_pages' => $viewers->hasMorePages()
+                ]
+            ], 200);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search story viewers',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function deleteStory(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'required|integer|exists:stories,id'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $story = Story::where('user_id', $user->id)->findOrFail($validatedData['story_id']);
+
+            // Delete media files
+            foreach ($story->media as $media) {
+                Storage::disk('public')->delete($media->path);
+            }
+
+            $story->update(['status' => 'deleted']);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Story deleted successfully'
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'Story not found',
+                'error' => $e->getMessage()
+            ], 404);
+        }
+    }
+
+    public function getStoryPollResults(Request $request)   
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'required|integer|exists:stories,id',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+            $user = Auth::guard('user')->user();
+            $story = Story::where('user_id', $user->id)->findOrFail($validatedData['story_id']);
+            $perPage = $validatedData['per_page'] ?? 20;
+            if (!$story->poll_element) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'This story does not have a poll'
+                ], 400);
+            }
+
+            $pollVotes = StoryPollVote::with('user')
+                ->where('story_id', $story->id)
+                ->paginate($perPage);
+
+            $mappedPollVotes = $pollVotes->map(function ($vote) use ($user) {
+                return $this->mapStoryPollVote($vote, $user);
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Poll results retrieved successfully',
+                'data' => $mappedPollVotes,
+                'pagination' => [
+                    'current_page' => $pollVotes->currentPage(),
+                    'last_page' => $pollVotes->lastPage(),
+                    'per_page' => $pollVotes->perPage(),
+                    'total' => $pollVotes->total(),
+                    'from' => $pollVotes->firstItem(),
+                    'to' => $pollVotes->lastItem(),
+                    'has_more_pages' => $pollVotes->hasMorePages()
+                ]
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'Story not found',
+                'error' => $e->getMessage()
+            ], 404);
+        }
+    }
+
+    // public function getStoryReplies(Request $request)
+    // {
+    //     try {
+    //         $validatedData = $request->validate([
+    //             'story_id' => 'required|integer|exists:stories,id'
+    //         ]);
+    //         $user = Auth::guard('user')->user();
+    //         $story = Story::where('user_id', $user->id)->findOrFail($validatedData['story_id']);
+
+    //         $replies = StoryReply::with('user')
+    //             ->where('story_id', $story->id)
+    //             ->orderBy('created_at', 'desc')
+    //             ->get();
+
+    //         $mappedReplies = $replies->map(function ($reply) {
+    //             return [
+    //                 'id' => $reply->id,
+    //                 'reply_text' => $reply->reply_text,
+    //                 'reply_media_url' => $reply->reply_media_url,
+    //                 'reply_type' => $reply->reply_type,
+    //                 'emoji' => $reply->emoji,
+    //                 'user' => $this->mapUserDetails($reply->user),
+    //                 'created_at' => $reply->created_at
+    //             ];
+    //         });
+
+    //         return response()->json([
+    //             'status_code' => 200,
+    //             'success' => true,
+    //             'message' => 'Story replies retrieved successfully',
+    //             'data' => $mappedReplies
+    //         ], 200);
+
+    //     } catch (Exception $e) {
+    //         return response()->json([
+    //             'status_code' => 404,
+    //             'success' => false,
+    //             'message' => 'Story not found',
+    //             'error' => $e->getMessage()
+    //         ], 404);
+    //     }
+    // }
 
 
-    
+
+
 
 
 
@@ -712,40 +993,6 @@ class StoryController extends Controller
         }
     }
 
-    public function getStoryViewers($storyId)
-    {
-        try {
-            $user = Auth::guard('user')->user();
-            $story = Story::where('user_id', $user->id)->findOrFail($storyId);
-
-            $viewers = StoryView::with('viewer')
-                ->where('story_id', $story->id)
-                ->orderBy('viewed_at', 'desc')
-                ->get();
-
-            $mappedViewers = $viewers->map(function ($view) {
-                return [
-                    'user' => $this->mapUserDetails($view->viewer),
-                    'viewed_at' => $view->viewed_at
-                ];
-            });
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Story viewers retrieved successfully',
-                'data' => $mappedViewers
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'Story not found',
-                'error' => $e->getMessage()
-            ], 404);
-        }
-    }
 
     public function replyToStory(Request $request, $storyId)
     {
@@ -801,45 +1048,7 @@ class StoryController extends Controller
         }
     }
 
-    public function getStoryReplies($storyId)
-    {
-        try {
-            $user = Auth::guard('user')->user();
-            $story = Story::where('user_id', $user->id)->findOrFail($storyId);
-
-            $replies = StoryReply::with('user')
-                ->where('story_id', $story->id)
-                ->orderBy('created_at', 'desc')
-                ->get();
-
-            $mappedReplies = $replies->map(function ($reply) {
-                return [
-                    'id' => $reply->id,
-                    'reply_text' => $reply->reply_text,
-                    'reply_media_url' => $reply->reply_media_url,
-                    'reply_type' => $reply->reply_type,
-                    'emoji' => $reply->emoji,
-                    'user' => $this->mapUserDetails($reply->user),
-                    'created_at' => $reply->created_at
-                ];
-            });
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Story replies retrieved successfully',
-                'data' => $mappedReplies
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'Story not found',
-                'error' => $e->getMessage()
-            ], 404);
-        }
-    }
+  
 
     public function voteStoryPoll(Request $request, $storyId)
     {
@@ -900,52 +1109,7 @@ class StoryController extends Controller
         }
     }
 
-    public function getStoryPollResults($storyId)
-    {
-        try {
-            $user = Auth::guard('user')->user();
-            $story = Story::where('user_id', $user->id)->findOrFail($storyId);
-
-            if (!$story->poll_element) {
-                return response()->json([
-                    'status_code' => 400,
-                    'success' => false,
-                    'message' => 'This story does not have a poll'
-                ], 400);
-            }
-
-            $pollVotes = StoryPollVote::with('user')
-                ->where('story_id', $story->id)
-                ->get();
-
-            $detailedResults = [];
-            foreach ($pollVotes as $vote) {
-                $detailedResults[] = [
-                    'user' => $this->mapUserDetails($vote->user),
-                    'selected_options' => $vote->selected_options,
-                    'voted_at' => $vote->created_at
-                ];
-            }
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Poll results retrieved successfully',
-                'data' => [
-                    'summary' => $story->poll_results,
-                    'detailed_votes' => $detailedResults
-                ]
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'Story not found',
-                'error' => $e->getMessage()
-            ], 404);
-        }
-    }
+  
 
     public function muteStoryNotifications(Request $request)
     {
@@ -1094,34 +1258,7 @@ class StoryController extends Controller
         }
     }
 
-    public function deleteStory($storyId)
-    {
-        try {
-            $user = Auth::guard('user')->user();
-            $story = Story::where('user_id', $user->id)->findOrFail($storyId);
-
-            // Delete media files
-            foreach ($story->media as $media) {
-                Storage::disk('public')->delete($media->path);
-            }
-
-            $story->update(['status' => 'deleted']);
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Story deleted successfully'
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'Story not found',
-                'error' => $e->getMessage()
-            ], 404);
-        }
-    }
+   
 
    
 } 

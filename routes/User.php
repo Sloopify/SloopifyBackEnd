@@ -141,7 +141,8 @@ Route::group(['prefix' => 'api/v1'], function () {
         
         Route::group(['controller' => StoryController::class], function () {
 
-            // Story creation and management
+            // My Story
+
             Route::post('/create-story', 'createStory');
 
             Route::post('/get-friends' , 'getFriends');
@@ -166,14 +167,23 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::post('/search-story-audio', 'searchStoryAudio');
 
+            Route::post('/get-story-viewers', 'getStoryViewers');
+
+            Route::post('/search-story-viewers', 'searchStoryViewers');
+
+            Route::delete('/delete-story', 'deleteStory');
+
+            Route::post('/get-story-poll-results', 'getStoryPollResults');
+
+
+
+            
             Route::get('/get-stories', 'getStories');
 
             Route::get('/get-story-by-id', 'getStoryById');
 
-            Route::delete('/delete-story', 'deleteStory');
-            
             // Story interactions
-            Route::get('/get-story-viewers', 'getStoryViewers');
+           
 
             Route::post('/reply-to-story', 'replyToStory');
 
@@ -182,7 +192,7 @@ Route::group(['prefix' => 'api/v1'], function () {
             // Story polls
             Route::post('/vote-story-poll', 'voteStoryPoll');
 
-            Route::get('/get-story-poll-results', 'getStoryPollResults');
+           
             
         
             
