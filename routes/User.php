@@ -173,8 +173,13 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::delete('/delete-story', 'deleteStory');
 
+            Route::post('/change-story-muted-notification', 'changeStoryMutedNotification');
+            
             Route::post('/get-story-poll-results', 'getStoryPollResults');
 
+            Route::post('/search-story-poll-results', 'searchStoryPollResults');
+
+           
 
 
             
@@ -192,8 +197,6 @@ Route::group(['prefix' => 'api/v1'], function () {
             // Story polls
             Route::post('/vote-story-poll', 'voteStoryPoll');
 
-           
-            
         
             
             // Story privacy and settings

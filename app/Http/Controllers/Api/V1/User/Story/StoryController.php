@@ -59,6 +59,7 @@ class StoryController extends Controller
              'temperature_element' => $story->temperature_element,
              'audio_element' => $story->audio_element,
              'poll_element' => $story->poll_element,
+             'is_story_muted_notification' => $story->is_story_muted_notification,
              'media' => $story->media->map(function ($media) {
                  return [
                      'id' => $media->id,
@@ -811,6 +812,51 @@ class StoryController extends Controller
         }
     }
 
+     public function changeStoryMutedNotification(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'story_id' => 'required|integer|exists:stories,id',
+                 'is_story_muted_notification' => 'required|boolean'
+             ]);
+             $user = Auth::guard('user')->user();
+             $story = Story::where('user_id', $user->id)->findOrFail($validatedData['story_id']);
+             
+             // Check if the story is already in the requested muted state
+             if ($story->is_story_muted_notification == $validatedData['is_story_muted_notification']) {
+                 $message = $validatedData['is_story_muted_notification'] 
+                     ? 'Story notifications are already muted' 
+                     : 'Story notifications are already unmuted';
+                 
+                 return response()->json([
+                     'status_code' => 400,
+                     'success' => false,
+                     'message' => $message
+                 ], 400);
+             }
+             
+             $story->update(['is_story_muted_notification' => $validatedData['is_story_muted_notification']]);
+             
+             $message = $validatedData['is_story_muted_notification']
+                 ? 'Story notifications muted successfully'
+                 : 'Story notifications unmuted successfully';
+             
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => $message
+             ], 200);
+         }
+         catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to change story muted notification',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
     public function getStoryPollResults(Request $request)   
     {
         try {
@@ -863,6 +909,66 @@ class StoryController extends Controller
             ], 404);
         }
     }
+
+    public function searchStoryPollResults(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'required|integer|exists:stories,id',
+                'search' => 'nullable|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $story = Story::where('user_id', $user->id)->findOrFail($validatedData['story_id']);
+            $perPage = $validatedData['per_page'] ?? 20;
+            $search = $validatedData['search'] ?? null;
+
+            $pollVotes = StoryPollVote::with('user')
+                ->where('story_id', $story->id)
+                ->whereHas('user', function ($query) use ($search) {
+                    if ($search) {
+                        $query->where(function ($q) use ($search) {
+                            $q->where('first_name', 'like', '%' . $search . '%')
+                              ->orWhere('last_name', 'like', '%' . $search . '%')
+                              ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ['%' . $search . '%']);
+                        });
+                    }
+                })
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage);
+
+            $mappedPollVotes = $pollVotes->map(function ($vote) use ($user) {
+                return $this->mapStoryPollVote($vote, $user);
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Poll results retrieved successfully',
+                'data' => $mappedPollVotes,
+                'pagination' => [
+                    'current_page' => $pollVotes->currentPage(),
+                    'last_page' => $pollVotes->lastPage(),
+                    'per_page' => $pollVotes->perPage(),
+                    'total' => $pollVotes->total(),
+                    'from' => $pollVotes->firstItem(),
+                    'to' => $pollVotes->lastItem(),
+                    'has_more_pages' => $pollVotes->hasMorePages()
+                ]
+            ], 200);
+        }
+        catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search poll results',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
     // public function getStoryReplies(Request $request)
     // {
@@ -1048,8 +1154,6 @@ class StoryController extends Controller
         }
     }
 
-  
-
     public function voteStoryPoll(Request $request, $storyId)
     {
         try {
@@ -1110,7 +1214,6 @@ class StoryController extends Controller
     }
 
   
-
     public function muteStoryNotifications(Request $request)
     {
         try {
