@@ -162,6 +162,10 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::post('/search-feeling' , 'searchFeeling');
 
+            Route::post('/get-story-audio', 'getStoryAudio');
+
+            Route::post('/search-story-audio', 'searchStoryAudio');
+
             Route::get('/get-stories', 'getStories');
 
             Route::get('/get-story-by-id', 'getStoryById');
@@ -180,8 +184,7 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::get('/get-story-poll-results', 'getStoryPollResults');
             
-            // Story audio
-            Route::get('/audio/available', 'getStoryAudio');
+        
             
             // Story privacy and settings
             Route::post('/mute-story-notifications', 'muteStoryNotifications');
