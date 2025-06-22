@@ -174,22 +174,24 @@ Route::group(['prefix' => 'api/v1'], function () {
             Route::delete('/delete-story', 'deleteStory');
 
             Route::post('/change-story-muted-notification', 'changeStoryMutedNotification');
-            
+
             Route::post('/get-story-poll-results', 'getStoryPollResults');
 
             Route::post('/search-story-poll-results', 'searchStoryPollResults');
 
+            Route::post('/get-story-by-id', 'getStoryById');
+
            
 
 
             
-            Route::get('/get-stories', 'getStories');
-
-            Route::get('/get-story-by-id', 'getStoryById');
+         
 
             // Story interactions
            
+            Route::get('/get-stories', 'getStories');
 
+      
             Route::post('/reply-to-story', 'replyToStory');
 
             Route::get('/get-story-replies', 'getStoryReplies');
