@@ -403,7 +403,6 @@ class StoryController extends Controller
         
         return $metadata;
     }
-
    
     public function getFriends(Request $request)
     {
@@ -968,6 +967,78 @@ class StoryController extends Controller
             ], 500);
         }
     }
+
+         public function getStoryById(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'story_id' => 'required|integer|exists:stories,id',
+             ]);
+             $user = Auth::guard('user')->user();
+             
+             // Debug: Check if story exists without any scopes
+             $storyExists = Story::find($validatedData['story_id']);
+             if (!$storyExists) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'Story does not exist in database'
+                 ], 404);
+             }
+             
+             // Debug: Check if story passes active scope
+             $activeStory = Story::active()->find($validatedData['story_id']);
+             if (!$activeStory) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'Story is not active or has expired',
+                     'debug' => [
+                         'status' => $storyExists->status,
+                         'expires_at' => $storyExists->expires_at,
+                         'current_time' => now()
+                     ]
+                 ], 404);
+             }
+             
+             // Debug: Check if story passes visibleTo scope
+             $visibleStory = Story::active()->visibleTo($user->id)->find($validatedData['story_id']);
+             if (!$visibleStory) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'Story is not visible to you',
+                     'debug' => [
+                         'story_privacy' => $storyExists->privacy,
+                         'story_owner_id' => $storyExists->user_id,
+                         'current_user_id' => $user->id,
+                         'is_own_story' => $storyExists->user_id == $user->id
+                     ]
+                 ], 404);
+             }
+
+             $story = Story::with(['user', 'media', 'views', 'replies', 'pollVotes'])
+                 ->active()
+                 ->visibleTo($user->id)
+                 ->findOrFail($validatedData['story_id']);
+
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Story retrieved successfully',
+                 'data' => $this->mapStory($story, $user)
+             ], 200);
+         }
+         catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 404,
+                 'success' => false,
+                 'message' => 'Story not found',
+                 'error' => $e->getMessage()
+             ], 404);
+         }
+     }
+    
 
 
     // public function getStoryReplies(Request $request)

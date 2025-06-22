@@ -75,6 +75,17 @@ class User extends Authenticatable
     }
 
     /**
+     * Get all friendships (both directions) - needed for Story visibility scope
+     */
+    public function friendships()
+    {
+        return $this->hasMany(Friendship::class, 'user_id')
+            ->union(
+                $this->hasMany(Friendship::class, 'friend_id')
+            );
+    }
+
+    /**
      * Get all accepted friends (both directions)
      */
     public function friends()

@@ -86,8 +86,10 @@ class Story extends Model
     public function scopeVisibleTo($query, $userId)
     {
         return $query->where(function($q) use ($userId) {
-            // Public stories
-            $q->where('privacy', 'public')
+            // User's own stories (always visible)
+            $q->where('user_id', $userId)
+              // Or public stories
+              ->orWhere('privacy', 'public')
               // Or stories where user is a friend
               ->orWhere(function($subQ) use ($userId) {
                   $subQ->where('privacy', 'friends')
