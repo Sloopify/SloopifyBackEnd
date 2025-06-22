@@ -155,7 +155,7 @@ class RegisterController extends Controller
                 'email' => $user->email,
                 'expires_at' => now()->addMinutes(5),
             ]);
-           return (new AuthController())->sendEmailOtp($user->email, $otpCode);           
+           return (new AuthController($this->sessionService))->sendEmailOtp($user->email, $otpCode);           
         }
         else if($validatedData['type'] === 'phone'){
             $otpExists = Otp::where('phone', $user->phone)
@@ -182,7 +182,7 @@ class RegisterController extends Controller
                 'phone' => $user->phone,
                 'expires_at' => now()->addMinutes(5),
             ]);
-            return (new AuthController())->sendMobileOtp($user->phone, $otpCode);
+            return (new AuthController($this->sessionService))->sendMobileOtp($user->phone, $otpCode);
         }
        }
        catch (ValidationException $e) {
