@@ -561,7 +561,9 @@ class StoryController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Story audio retrieved successfully',
-                'data' => $mappedAudio,
+                'data' =>
+                   [ 
+                'audio' => $mappedAudio,
                 'pagination' => [
                     'current_page' => $audioFiles->currentPage(),
                     'last_page' => $audioFiles->lastPage(),
@@ -570,6 +572,7 @@ class StoryController extends Controller
                     'from' => $audioFiles->firstItem(),
                     'to' => $audioFiles->lastItem(),
                     'has_more_pages' => $audioFiles->hasMorePages()
+                ]
                 ]
             ], 200);
 
@@ -604,7 +607,8 @@ class StoryController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Story audio retrieved successfully',
-                'data' => $mappedAudio,
+                'data' => [
+                'audio' => $mappedAudio,
                 'pagination' => [
                     'current_page' => $audioFiles->currentPage(),
                     'last_page' => $audioFiles->lastPage(),
@@ -613,6 +617,7 @@ class StoryController extends Controller
                     'from' => $audioFiles->firstItem(),
                     'to' => $audioFiles->lastItem(),
                     'has_more_pages' => $audioFiles->hasMorePages()
+                    ]
                 ]
             ], 200);
         }
@@ -674,7 +679,8 @@ class StoryController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Story viewers retrieved successfully',
-                'data' => $mappedViewers,
+                'data' => [
+                    'viewers' => $mappedViewers,
                 'count' => $viewers->total(),
                 'pagination' => [
                     'current_page' => $viewers->currentPage(),
@@ -684,6 +690,7 @@ class StoryController extends Controller
                     'from' => $viewers->firstItem(),
                     'to' => $viewers->lastItem(),
                     'has_more_pages' => $viewers->hasMorePages()
+                ]
                 ]
             ], 200);
 
@@ -756,7 +763,8 @@ class StoryController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Story viewers retrieved successfully',
-                'data' => $mappedViewers,
+                'data' => [
+                    'viewers' => $mappedViewers,
                 'pagination' => [
                     'current_page' => $viewers->currentPage(),
                     'last_page' => $viewers->lastPage(),
@@ -765,6 +773,7 @@ class StoryController extends Controller
                     'from' => $viewers->firstItem(),
                     'to' => $viewers->lastItem(),
                     'has_more_pages' => $viewers->hasMorePages()
+                    ]
                 ]
             ], 200);
         }
@@ -887,7 +896,8 @@ class StoryController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Poll results retrieved successfully',
-                'data' => $mappedPollVotes,
+                'data' => [
+                'poll_votes' => $mappedPollVotes,
                 'pagination' => [
                     'current_page' => $pollVotes->currentPage(),
                     'last_page' => $pollVotes->lastPage(),
@@ -896,6 +906,7 @@ class StoryController extends Controller
                     'from' => $pollVotes->firstItem(),
                     'to' => $pollVotes->lastItem(),
                     'has_more_pages' => $pollVotes->hasMorePages()
+                    ]
                 ]
             ], 200);
 
@@ -946,7 +957,8 @@ class StoryController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Poll results retrieved successfully',
-                'data' => $mappedPollVotes,
+                'data' => [
+                    'poll_votes' => $mappedPollVotes,
                 'pagination' => [
                     'current_page' => $pollVotes->currentPage(),
                     'last_page' => $pollVotes->lastPage(),
@@ -955,6 +967,7 @@ class StoryController extends Controller
                     'from' => $pollVotes->firstItem(),
                     'to' => $pollVotes->lastItem(),
                     'has_more_pages' => $pollVotes->hasMorePages()
+                    ]
                 ]
             ], 200);
         }
@@ -968,7 +981,7 @@ class StoryController extends Controller
         }
     }
 
-         public function getStoryById(Request $request)
+     public function getStoryById(Request $request)
      {
          try {
              $validatedData = $request->validate([
@@ -1039,6 +1052,12 @@ class StoryController extends Controller
          }
      }
     
+
+
+
+
+
+     
 
 
     // public function getStoryReplies(Request $request)
