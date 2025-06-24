@@ -868,7 +868,8 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Feelings retrieved successfully',
-                'data' => $mappedFeelings,
+                'data' =>[
+                'feelings' => $mappedFeelings,
                 'pagination' => [
                     'current_page' => $feelings->currentPage(),
                     'last_page' => $feelings->lastPage(),
@@ -877,6 +878,7 @@ class PostController extends Controller
                     'from' => $feelings->firstItem(),
                     'to' => $feelings->lastItem(),
                     'has_more_pages' => $feelings->hasMorePages()
+                ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -929,15 +931,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Activity categories retrieved successfully',
-                'data' => $categories,
-                'pagination' => [
-                    'current_page' => $activities->currentPage(),
-                    'last_page' => $activities->lastPage(),
-                    'per_page' => $activities->perPage(),
-                    'total' => $activities->total(),
-                    'from' => $activities->firstItem(),
-                    'to' => $activities->lastItem(),
-                    'has_more_pages' => $activities->hasMorePages()
+                'data' => [
+                    'categories' => $categories,
+                    'pagination' => [
+                        'current_page' => $activities->currentPage(),
+                        'last_page' => $activities->lastPage(),
+                        'per_page' => $activities->perPage(),
+                        'total' => $activities->total(),
+                        'from' => $activities->firstItem(),
+                        'to' => $activities->lastItem(),
+                        'has_more_pages' => $activities->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -988,15 +992,17 @@ class PostController extends Controller
             'status_code' => 200,
             'success' => true,
             'message' => 'Activities retrieved successfully by category name',
-            'data' => $mappedActivities,
-            'pagination' => [
-                'current_page' => $activities->currentPage(),
-                'last_page' => $activities->lastPage(),
-                'per_page' => $activities->perPage(),
-                'total' => $activities->total(),
-                'from' => $activities->firstItem(),
-                'to' => $activities->lastItem(),
-                'has_more_pages' => $activities->hasMorePages()
+            'data' => [
+                'activities' => $mappedActivities,
+                'pagination' => [
+                    'current_page' => $activities->currentPage(),
+                    'last_page' => $activities->lastPage(),
+                    'per_page' => $activities->perPage(),
+                    'total' => $activities->total(),
+                    'from' => $activities->firstItem(),
+                    'to' => $activities->lastItem(),
+                    'has_more_pages' => $activities->hasMorePages()
+                ]
             ]
         ], 200);
         } catch (ValidationException $e) {
@@ -1047,15 +1053,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Feelings retrieved successfully',
-                'data' => $mappedFeelings,
-                'pagination' => [
-                    'current_page' => $feelings->currentPage(),
-                    'last_page' => $feelings->lastPage(),
-                    'per_page' => $feelings->perPage(),
-                    'total' => $feelings->total(),
-                    'from' => $feelings->firstItem(),
-                    'to' => $feelings->lastItem(),
-                    'has_more_pages' => $feelings->hasMorePages()
+                'data' => [
+                    'feelings' => $mappedFeelings,
+                    'pagination' => [
+                        'current_page' => $feelings->currentPage(),
+                        'last_page' => $feelings->lastPage(),
+                        'per_page' => $feelings->perPage(),
+                        'total' => $feelings->total(),
+                        'from' => $feelings->firstItem(),
+                        'to' => $feelings->lastItem(),
+                        'has_more_pages' => $feelings->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -1110,15 +1118,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Categories retrieved successfully',
-                'data' => $categories,
-                'pagination' => [
-                    'current_page' => $activities->currentPage(),
-                    'last_page' => $activities->lastPage(),
-                    'per_page' => $activities->perPage(),
-                    'total' => $activities->total(),
-                    'from' => $activities->firstItem(),
-                    'to' => $activities->lastItem(),
-                    'has_more_pages' => $activities->hasMorePages()
+                'data' => [
+                    'categories' => $categories,
+                    'pagination' => [
+                        'current_page' => $activities->currentPage(),
+                        'last_page' => $activities->lastPage(),
+                        'per_page' => $activities->perPage(),
+                        'total' => $activities->total(),
+                        'from' => $activities->firstItem(),
+                        'to' => $activities->lastItem(),
+                        'has_more_pages' => $activities->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -1169,15 +1179,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Activities retrieved successfully',
-                'data' => $mappedActivities,
-                'pagination' => [
-                    'current_page' => $activities->currentPage(),
-                    'last_page' => $activities->lastPage(),
-                    'per_page' => $activities->perPage(),
-                    'total' => $activities->total(),
-                    'from' => $activities->firstItem(),
-                    'to' => $activities->lastItem(),
-                    'has_more_pages' => $activities->hasMorePages()
+                'data' => [
+                    'activities' => $mappedActivities,
+                    'pagination' => [
+                        'current_page' => $activities->currentPage(),
+                        'last_page' => $activities->lastPage(),
+                        'per_page' => $activities->perPage(),
+                        'total' => $activities->total(),
+                        'from' => $activities->firstItem(),
+                        'to' => $activities->lastItem(),
+                        'has_more_pages' => $activities->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (Exception $e) {
@@ -1255,15 +1267,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Friends retrieved successfully',
-                'data' => $mappedFriends,
-                'pagination' => [
-                    'current_page' => $friends->currentPage(),
-                    'last_page' => $friends->lastPage(),
-                    'per_page' => $friends->perPage(),
-                    'total' => $friends->total(),
-                    'from' => $friends->firstItem(),
-                    'to' => $friends->lastItem(),
-                    'has_more_pages' => $friends->hasMorePages()
+                'data' => [
+                    'friends' => $mappedFriends,
+                    'pagination' => [
+                        'current_page' => $friends->currentPage(),
+                        'last_page' => $friends->lastPage(),
+                        'per_page' => $friends->perPage(),
+                        'total' => $friends->total(),
+                        'from' => $friends->firstItem(),
+                        'to' => $friends->lastItem(),
+                        'has_more_pages' => $friends->hasMorePages()
+                    ]
                 ]
             ], 200);
 
@@ -1357,15 +1371,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Friends found successfully',
-                'data' => $mappedFriends,
-                'pagination' => [
-                    'current_page' => $friends->currentPage(),
-                    'last_page' => $friends->lastPage(),
-                    'per_page' => $friends->perPage(),
-                    'total' => $friends->total(),
-                    'from' => $friends->firstItem(),
-                    'to' => $friends->lastItem(),
-                    'has_more_pages' => $friends->hasMorePages()
+                'data' => [
+                    'friends' => $mappedFriends,
+                    'pagination' => [
+                        'current_page' => $friends->currentPage(),
+                        'last_page' => $friends->lastPage(),
+                        'per_page' => $friends->perPage(),
+                        'total' => $friends->total(),
+                        'from' => $friends->firstItem(),
+                        'to' => $friends->lastItem(),
+                        'has_more_pages' => $friends->hasMorePages()
+                    ]
                 ]
             ], 200);
 
@@ -1415,15 +1431,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Personal occasion categories retrieved successfully',
-                'data' => $mappedCategories,
-                'pagination' => [
-                    'current_page' => $personalOccasionCategories->currentPage(),
-                    'last_page' => $personalOccasionCategories->lastPage(),
-                    'per_page' => $personalOccasionCategories->perPage(),
-                    'total' => $personalOccasionCategories->total(),
-                    'from' => $personalOccasionCategories->firstItem(),
-                    'to' => $personalOccasionCategories->lastItem(),
-                    'has_more_pages' => $personalOccasionCategories->hasMorePages()
+                'data' => [
+                    'personal_occasion_categories' => $mappedCategories,
+                    'pagination' => [
+                        'current_page' => $personalOccasionCategories->currentPage(),
+                        'last_page' => $personalOccasionCategories->lastPage(),
+                        'per_page' => $personalOccasionCategories->perPage(),
+                        'total' => $personalOccasionCategories->total(),
+                        'from' => $personalOccasionCategories->firstItem(),
+                        'to' => $personalOccasionCategories->lastItem(),
+                        'has_more_pages' => $personalOccasionCategories->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -1474,15 +1492,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Personal occasion categories with occasions retrieved successfully',
-                'data' => $mappedCategories,
-                'pagination' => [
-                    'current_page' => $personalOccasionCategories->currentPage(),
-                    'last_page' => $personalOccasionCategories->lastPage(),
-                    'per_page' => $personalOccasionCategories->perPage(),
-                    'total' => $personalOccasionCategories->total(),
-                    'from' => $personalOccasionCategories->firstItem(),
-                    'to' => $personalOccasionCategories->lastItem(),
-                    'has_more_pages' => $personalOccasionCategories->hasMorePages()
+                'data' => [
+                    'personal_occasion_categories' => $mappedCategories,
+                    'pagination' => [
+                        'current_page' => $personalOccasionCategories->currentPage(),
+                        'last_page' => $personalOccasionCategories->lastPage(),
+                        'per_page' => $personalOccasionCategories->perPage(),
+                        'total' => $personalOccasionCategories->total(),
+                        'from' => $personalOccasionCategories->firstItem(),
+                        'to' => $personalOccasionCategories->lastItem(),
+                        'has_more_pages' => $personalOccasionCategories->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -1533,15 +1553,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Personal occasion settings retrieved successfully',
-                'data' => $mappedSettings,
-                'pagination' => [
-                    'current_page' => $personalOccasionSettings->currentPage(),
-                    'last_page' => $personalOccasionSettings->lastPage(),
-                    'per_page' => $personalOccasionSettings->perPage(),
-                    'total' => $personalOccasionSettings->total(),
-                    'from' => $personalOccasionSettings->firstItem(),
-                    'to' => $personalOccasionSettings->lastItem(),
-                    'has_more_pages' => $personalOccasionSettings->hasMorePages()
+                'data' => [
+                    'personal_occasion_settings' => $mappedSettings,
+                    'pagination' => [
+                        'current_page' => $personalOccasionSettings->currentPage(),
+                        'last_page' => $personalOccasionSettings->lastPage(),
+                        'per_page' => $personalOccasionSettings->perPage(),
+                        'total' => $personalOccasionSettings->total(),
+                        'from' => $personalOccasionSettings->firstItem(),
+                        'to' => $personalOccasionSettings->lastItem(),
+                        'has_more_pages' => $personalOccasionSettings->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -1591,15 +1613,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'User places retrieved successfully',
-                'data' => $mappedUserPlaces,
-                'pagination' => [
-                    'current_page' => $userPlaces->currentPage(),
-                    'last_page' => $userPlaces->lastPage(),
-                    'per_page' => $userPlaces->perPage(),
-                    'total' => $userPlaces->total(),
-                    'from' => $userPlaces->firstItem(),
-                    'to' => $userPlaces->lastItem(),
-                    'has_more_pages' => $userPlaces->hasMorePages()
+                'data' => [
+                    'user_places' => $mappedUserPlaces,
+                    'pagination' => [
+                        'current_page' => $userPlaces->currentPage(),
+                        'last_page' => $userPlaces->lastPage(),
+                        'per_page' => $userPlaces->perPage(),
+                        'total' => $userPlaces->total(),
+                        'from' => $userPlaces->firstItem(),
+                        'to' => $userPlaces->lastItem(),
+                        'has_more_pages' => $userPlaces->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -1651,15 +1675,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'User places retrieved successfully',
-                'data' => $mappedUserPlaces,
-                'pagination' => [
-                    'current_page' => $userPlaces->currentPage(),
-                    'last_page' => $userPlaces->lastPage(),
-                    'per_page' => $userPlaces->perPage(),
-                    'total' => $userPlaces->total(),
-                    'from' => $userPlaces->firstItem(),
-                    'to' => $userPlaces->lastItem(),
-                    'has_more_pages' => $userPlaces->hasMorePages()
+                'data' => [
+                    'user_places' => $mappedUserPlaces,
+                    'pagination' => [
+                        'current_page' => $userPlaces->currentPage(),
+                        'last_page' => $userPlaces->lastPage(),
+                        'per_page' => $userPlaces->perPage(),
+                        'total' => $userPlaces->total(),
+                        'from' => $userPlaces->firstItem(),
+                        'to' => $userPlaces->lastItem(),
+                        'has_more_pages' => $userPlaces->hasMorePages()
+                    ]
                 ]
             ], 200);
         } catch (ValidationException $e) {
@@ -2076,15 +2102,17 @@ class PostController extends Controller
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'User posts retrieved successfully',
-                'data' => $posts->items(),
-                'pagination' => [
-                    'current_page' => $posts->currentPage(),
-                    'last_page' => $posts->lastPage(),
-                    'per_page' => $posts->perPage(),
-                    'total' => $posts->total(),
-                    'from' => $posts->firstItem(),
-                    'to' => $posts->lastItem(),
-                    'has_more_pages' => $posts->hasMorePages()
+                'data' => [
+                    'posts' => $posts->items(),
+                    'pagination' => [
+                        'current_page' => $posts->currentPage(),
+                        'last_page' => $posts->lastPage(),
+                        'per_page' => $posts->perPage(),
+                        'total' => $posts->total(),
+                        'from' => $posts->firstItem(),
+                        'to' => $posts->lastItem(),
+                        'has_more_pages' => $posts->hasMorePages()
+                    ]
                 ]
             ], 200);
 
