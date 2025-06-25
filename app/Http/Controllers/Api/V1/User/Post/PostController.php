@@ -907,16 +907,19 @@ class PostController extends Controller
             ]);
 
             $perPage = $validatedData['per_page'] ?? 20;
+            $page = $validatedData['page'] ?? 1;
 
-            // Get distinct categories with pagination
-            $activities = PostActivity::where('status', 'active')
+            // Get all distinct categories first
+            $allCategories = PostActivity::where('status', 'active')
                 ->select('category')
                 ->distinct()
                 ->whereNotNull('category')
                 ->where('category', '!=', '')
-                ->paginate($perPage);
+                ->orderBy('category')
+                ->pluck('category')
+                ->values();
             
-            if($activities->isEmpty()) {
+            if($allCategories->isEmpty()) {
                 return response()->json([
                     'status_code' => 404,
                     'success' => false,
@@ -924,8 +927,17 @@ class PostController extends Controller
                 ], 404);
             }
 
-            // Extract categories from paginated results
-            $categories = $activities->getCollection()->pluck('category')->values();
+            // Manual pagination
+            $total = $allCategories->count();
+            $lastPage = ceil($total / $perPage);
+            $offset = ($page - 1) * $perPage;
+            
+            // Get categories for current page
+            $categories = $allCategories->slice($offset, $perPage)->values();
+            
+            // Calculate pagination info
+            $from = $categories->isEmpty() ? null : $offset + 1;
+            $to = $categories->isEmpty() ? null : $offset + $categories->count();
             
             return response()->json([
                 'status_code' => 200,
@@ -934,13 +946,13 @@ class PostController extends Controller
                 'data' => [
                     'categories' => $categories,
                     'pagination' => [
-                        'current_page' => $activities->currentPage(),
-                        'last_page' => $activities->lastPage(),
-                        'per_page' => $activities->perPage(),
-                        'total' => $activities->total(),
-                        'from' => $activities->firstItem(),
-                        'to' => $activities->lastItem(),
-                        'has_more_pages' => $activities->hasMorePages()
+                        'current_page' => $page,
+                        'last_page' => $lastPage,
+                        'per_page' => $perPage,
+                        'total' => $total,
+                        'from' => $from,
+                        'to' => $to,
+                        'has_more_pages' => $page < $lastPage
                     ]
                 ]
             ], 200);
@@ -1093,17 +1105,20 @@ class PostController extends Controller
             ]);
 
             $perPage = $validatedData['per_page'] ?? 20;
+            $page = $validatedData['page'] ?? 1;
 
-            // Get distinct categories with pagination
-            $activities = PostActivity::where('status', 'active')
+            // Get all distinct categories that match search first
+            $allCategories = PostActivity::where('status', 'active')
                 ->where('category', 'like', '%' . $validatedData['search'] . '%')
                 ->select('category')
                 ->distinct()
                 ->whereNotNull('category')
                 ->where('category', '!=', '')
-                ->paginate($perPage);
+                ->orderBy('category')
+                ->pluck('category')
+                ->values();
                 
-            if($activities->isEmpty()) {
+            if($allCategories->isEmpty()) {
                 return response()->json([
                     'status_code' => 404,
                     'success' => false,
@@ -1111,8 +1126,17 @@ class PostController extends Controller
                 ], 404);
             }
 
-            // Extract categories from paginated results
-            $categories = $activities->getCollection()->pluck('category')->values();
+            // Manual pagination
+            $total = $allCategories->count();
+            $lastPage = ceil($total / $perPage);
+            $offset = ($page - 1) * $perPage;
+            
+            // Get categories for current page
+            $categories = $allCategories->slice($offset, $perPage)->values();
+            
+            // Calculate pagination info
+            $from = $categories->isEmpty() ? null : $offset + 1;
+            $to = $categories->isEmpty() ? null : $offset + $categories->count();
 
             return response()->json([
                 'status_code' => 200,
@@ -1121,13 +1145,13 @@ class PostController extends Controller
                 'data' => [
                     'categories' => $categories,
                     'pagination' => [
-                        'current_page' => $activities->currentPage(),
-                        'last_page' => $activities->lastPage(),
-                        'per_page' => $activities->perPage(),
-                        'total' => $activities->total(),
-                        'from' => $activities->firstItem(),
-                        'to' => $activities->lastItem(),
-                        'has_more_pages' => $activities->hasMorePages()
+                        'current_page' => $page,
+                        'last_page' => $lastPage,
+                        'per_page' => $perPage,
+                        'total' => $total,
+                        'from' => $from,
+                        'to' => $to,
+                        'has_more_pages' => $page < $lastPage
                     ]
                 ]
             ], 200);
