@@ -25,6 +25,7 @@ class FriendshipSeeder extends Seeder
                 'status' => 'accepted',
                 'requested_at' => now()->subDays(5),
                 'responded_at' => now()->subDays(4),
+                'accepted_at' => now()->subDays(3),
             ]);
 
             if ($users->count() >= 3) {
@@ -34,6 +35,7 @@ class FriendshipSeeder extends Seeder
                     'status' => 'accepted',
                     'requested_at' => now()->subDays(3),
                     'responded_at' => now()->subDays(2),
+                    'accepted_at' => now()->subDays(1),
                 ]);
             }
 
@@ -55,6 +57,7 @@ class FriendshipSeeder extends Seeder
                     'status' => 'accepted',
                     'requested_at' => now()->subDays(7),
                     'responded_at' => now()->subDays(6),
+                    'accepted_at' => now()->subDays(5),
                 ]);
             }
         }

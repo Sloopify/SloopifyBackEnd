@@ -10,93 +10,238 @@ use App\Models\User;
 use App\Models\Friendship;
 use Illuminate\Validation\ValidationException;
 use Exception;
+use App\Http\Controllers\Api\V1\User\Auth\AuthController;
+use App\Services\SessionManagementService;
+use App\Models\UserSession;
 
 class FriendController extends Controller
 {
-    /**
-     * Get user's friends list for post privacy selection
-     */
-    public function getFriendsForPostPrivacy(Request $request)
+    protected $authController;
+    protected $sessionService;
+
+    public function __construct(AuthController $authController, SessionManagementService $sessionService)
     {
+        $this->authController = $authController;
+        $this->sessionService = $sessionService;
+    }
+
+     private function getUserOnlineStatus($userId)
+     {
+        // Consider user online if they have active session with activity in last 5 minutes
+        $onlineThreshold = now()->subMinutes(5);
+        
+        $recentSession = UserSession::where('user_id', $userId)
+            ->active()
+            ->where('last_activity', '>=', $onlineThreshold)
+            ->orderBy('last_activity', 'desc')
+            ->first();
+
+        if ($recentSession) {
+            return [
+                'is_online' => true,
+                'last_seen' => $recentSession->last_activity,
+                'last_seen_human' => $recentSession->last_activity->diffForHumans(),
+                'status' => 'online'
+            ];
+        }
+
+        // Get the most recent session activity
+        $lastSession = UserSession::where('user_id', $userId)
+            ->orderBy('last_activity', 'desc')
+            ->first();
+
+        if ($lastSession) {
+            return [
+                'is_online' => false,
+                'last_seen' => $lastSession->last_activity,
+                'last_seen_human' => $lastSession->last_activity->diffForHumans(),
+                'status' => 'offline'
+            ];
+        }
+
+        return [
+            'is_online' => false,
+            'last_seen' => null,
+            'last_seen_human' => 'Never',
+            'status' => 'offline'
+        ];
+     }
+    
+     private function addOnlineStatusToUserDetails($userDetails, $userId)
+     {
+         $onlineStatus = $this->getUserOnlineStatus($userId);
+         
+         return array_merge($userDetails, [
+             'online_status' => $onlineStatus
+         ]);
+     }
+
+     private function getMutualFriends($currentUserId, $otherUserId)
+     {
+         // Get current user's friend IDs
+         $currentUserFriends = Friendship::where(function($query) use ($currentUserId) {
+             $query->where('user_id', $currentUserId)
+                   ->orWhere('friend_id', $currentUserId);
+         })
+         ->where('status', 'accepted')
+         ->get()
+         ->map(function($friendship) use ($currentUserId) {
+             return $friendship->user_id == $currentUserId ? $friendship->friend_id : $friendship->user_id;
+         })
+         ->toArray();
+
+         // Get other user's friend IDs
+         $otherUserFriends = Friendship::where(function($query) use ($otherUserId) {
+             $query->where('user_id', $otherUserId)
+                   ->orWhere('friend_id', $otherUserId);
+         })
+         ->where('status', 'accepted')
+         ->get()
+         ->map(function($friendship) use ($otherUserId) {
+             return $friendship->user_id == $otherUserId ? $friendship->friend_id : $friendship->user_id;
+         })
+         ->toArray();
+
+         // Find mutual friend IDs (intersection)
+         $mutualFriendIds = array_intersect($currentUserFriends, $otherUserFriends);
+
+         if (empty($mutualFriendIds)) {
+             return [
+                 'count' => 0,
+                 'friends' => []
+             ];
+         }
+
+         // Get mutual friends details (limit to first 5 for performance)
+         $mutualFriends = User::whereIn('id', $mutualFriendIds)
+             ->take(5)
+             ->get()
+             ->map(function($friend) {
+                 return $this->authController->mapUserDetails($friend);
+             });
+
+         return [
+             'count' => count($mutualFriendIds),
+             'friends' => $mutualFriends
+         ];
+     }
+     
+     private function addMutualFriendsToUserDetails($userDetails, $currentUserId, $friendId)
+     {
+         $mutualFriends = $this->getMutualFriends($currentUserId, $friendId);
+         
+         return array_merge($userDetails, [
+             'mutual_friends' => $mutualFriends
+         ]);
+     }
+
+     private function getProfileImageUrl($user)
+     {
+         if ($user->provider === 'google') {
+             return $user->img;
+         }
+         
+         return $user->img ? config('app.url') . '/storage/' . $user->img : null;
+     }
+
+     public function getFriends(Request $request)
+     {
         try {
             $validatedData = $request->validate([
-                'search' => 'nullable|string|max:255',
                 'page' => 'nullable|integer|min:1',
-                'per_page' => 'nullable|integer|min:1|max:100'
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'sort_by' => 'nullable|string|in:name,date_accepted',
+                'sort_order' => 'nullable|string|in:asc,desc'
             ]);
 
             $user = Auth::guard('user')->user();
             $perPage = $validatedData['per_page'] ?? 20;
-            $search = $validatedData['search'] ?? '';
+            $sortBy = $validatedData['sort_by'] ?? 'name';
+            $sortOrder = $validatedData['sort_order'] ?? 'asc';
+            
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
 
-            // Get friends where current user is the initiator
-            $sentFriends = $user->sentFriendRequests()
-                ->accepted()
-                ->with(['friend' => function($query) use ($search) {
-                    $query->select('id', 'first_name', 'last_name', 'img', 'provider');
-                    if ($search) {
-                        $query->where(function($q) use ($search) {
-                            $q->where('first_name', 'like', "%{$search}%")
-                              ->orWhere('last_name', 'like', "%{$search}%")
-                              ->orWhere(DB::raw("CONCAT(first_name, ' ', last_name)"), 'like', "%{$search}%");
-                        });
-                    }
-                }])
-                ->get()
-                ->pluck('friend')
-                ->filter(); // Remove null values from search filtering
+            // Build query to get friends with friendship metadata
+            $query = User::join('friendships', function($join) use ($user) {
+                $join->on(function($query) use ($user) {
+                    $query->where(function($subQuery) use ($user) {
+                        $subQuery->where('friendships.user_id', $user->id)
+                                 ->whereColumn('friendships.friend_id', 'users.id');
+                    })->orWhere(function($subQuery) use ($user) {
+                        $subQuery->where('friendships.friend_id', $user->id)
+                                 ->whereColumn('friendships.user_id', 'users.id');
+                    });
+                });
+            })
+            ->where('friendships.status', 'accepted')
+            ->select('users.*', 'friendships.responded_at', 'friendships.requested_at', 'friendships.created_at as friendship_created_at');
 
-            // Get friends where current user is the recipient
-            $receivedFriends = $user->receivedFriendRequests()
-                ->accepted()
-                ->with(['user' => function($query) use ($search) {
-                    $query->select('id', 'first_name', 'last_name', 'img', 'provider');
-                    if ($search) {
-                        $query->where(function($q) use ($search) {
-                            $q->where('first_name', 'like', "%{$search}%")
-                              ->orWhere('last_name', 'like', "%{$search}%")
-                              ->orWhere(DB::raw("CONCAT(first_name, ' ', last_name)"), 'like', "%{$search}%");
-                        });
-                    }
-                }])
-                ->get()
-                ->pluck('user')
-                ->filter(); // Remove null values from search filtering
+            // Apply sorting
+            if ($sortBy === 'name') {
+                $query->orderByRaw("CONCAT(users.first_name, ' ', users.last_name) {$sortOrder}");
+            } elseif ($sortBy === 'date_accepted') {
+                $query->orderBy('friendships.responded_at', $sortOrder);
+            }
 
-            // Merge and remove duplicates
-            $allFriends = $sentFriends->merge($receivedFriends)->unique('id');
+            // Get friends with pagination
+            $friends = $query->paginate($perPage);
 
-            // Format the friends data
-            $friendsData = $allFriends->map(function ($friend) {
-                return [
-                    'id' => $friend->id,
-                    'name' => $friend->first_name . ' ' . $friend->last_name,
-                    'first_name' => $friend->first_name,
-                    'last_name' => $friend->last_name,
-                    'profile_image' => $this->getProfileImageUrl($friend),
-                    'is_online' => false, // You can implement online status later
+            if($friends->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No friends found'
+                ], 404);
+            }
+
+            // Map friends data with online status and mutual friends
+            $mappedFriends = $friends->getCollection()->map(function ($friend) use ($user) {
+                $userDetails = $this->authController->mapUserDetails($friend);
+                $userDetails = $this->addOnlineStatusToUserDetails($userDetails, $friend->id);
+                $userDetails = $this->addMutualFriendsToUserDetails($userDetails, $user->id, $friend->id);
+                
+                // Add friendship metadata - Convert string dates to Carbon instances
+                $respondedAt = $friend->responded_at ? \Carbon\Carbon::parse($friend->responded_at) : null;
+                $requestedAt = $friend->requested_at ? \Carbon\Carbon::parse($friend->requested_at) : null;
+                $friendshipCreatedAt = $friend->friendship_created_at ? \Carbon\Carbon::parse($friend->friendship_created_at) : null;
+                
+                $userDetails['friendship_info'] = [
+                    'responded_at' => $respondedAt,
+                    'responded_at_human' => $respondedAt ? $respondedAt->diffForHumans() : null,
+                    'requested_at' => $requestedAt,
+                    'requested_at_human' => $requestedAt ? $requestedAt->diffForHumans() : null,
+                    'friendship_created_at' => $friendshipCreatedAt
                 ];
-            })->values();
-
-            // Manual pagination
-            $total = $friendsData->count();
-            $currentPage = $validatedData['page'] ?? 1;
-            $offset = ($currentPage - 1) * $perPage;
-            $paginatedFriends = $friendsData->slice($offset, $perPage)->values();
+                
+                return $userDetails;
+            });
 
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Friends retrieved successfully',
-                'data' => $paginatedFriends,
-                'pagination' => [
-                    'current_page' => $currentPage,
-                    'per_page' => $perPage,
-                    'total' => $total,
-                    'last_page' => ceil($total / $perPage),
-                    'from' => $offset + 1,
-                    'to' => min($offset + $perPage, $total),
-                    'has_more_pages' => $currentPage < ceil($total / $perPage)
+                'data' => [
+                    'friends' => $mappedFriends,
+                    'total_friends' => $friends->total(),
+                    'sorting' => [
+                        'sort_by' => $sortBy,
+                        'sort_order' => $sortOrder
+                    ],
+                    'pagination' => [
+                        'current_page' => $friends->currentPage(),
+                        'last_page' => $friends->lastPage(),
+                        'per_page' => $friends->perPage(),
+                        'total' => $friends->total(),
+                        'from' => $friends->firstItem(),
+                        'to' => $friends->lastItem(),
+                        'has_more_pages' => $friends->hasMorePages()
+                    ]
                 ]
             ], 200);
 
@@ -115,11 +260,282 @@ class FriendController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
-    }
+     }
 
-    /**
-     * Send friend request
-     */
+     public function searchFriends(Request $request)
+     {
+        try {
+            $validatedData = $request->validate([
+                'search' => 'required|string|min:1|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'sort_by' => 'nullable|string|in:name,date_accepted',
+                'sort_order' => 'nullable|string|in:asc,desc'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $searchQuery = $validatedData['search'];
+            $perPage = $validatedData['per_page'] ?? 20;
+            $sortBy = $validatedData['sort_by'] ?? 'name';
+            $sortOrder = $validatedData['sort_order'] ?? 'asc';
+            
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Build query to search friends with friendship metadata
+            $query = User::join('friendships', function($join) use ($user) {
+                $join->on(function($query) use ($user) {
+                    $query->where(function($subQuery) use ($user) {
+                        $subQuery->where('friendships.user_id', $user->id)
+                                 ->whereColumn('friendships.friend_id', 'users.id');
+                    })->orWhere(function($subQuery) use ($user) {
+                        $subQuery->where('friendships.friend_id', $user->id)
+                                 ->whereColumn('friendships.user_id', 'users.id');
+                    });
+                });
+            })
+            ->where('friendships.status', 'accepted')
+            ->where(function($query) use ($searchQuery) {
+                $query->where('users.first_name', 'LIKE', '%' . $searchQuery . '%')
+                      ->orWhere('users.last_name', 'LIKE', '%' . $searchQuery . '%')
+                      ->orWhere('users.email', 'LIKE', '%' . $searchQuery . '%')
+                      ->orWhere('users.phone', 'LIKE', '%' . $searchQuery . '%')
+                      ->orWhereRaw("CONCAT(users.first_name, ' ', users.last_name) LIKE ?", ['%' . $searchQuery . '%']);
+            })
+            ->select('users.*', 'friendships.responded_at', 'friendships.requested_at', 'friendships.created_at as friendship_created_at');
+
+            // Apply sorting
+            if ($sortBy === 'name') {
+                $query->orderByRaw("CONCAT(users.first_name, ' ', users.last_name) {$sortOrder}");
+            } elseif ($sortBy === 'date_accepted') {
+                $query->orderBy('friendships.responded_at', $sortOrder);
+            }
+
+            // Get friends with pagination
+            $friends = $query->paginate($perPage);
+
+            if($friends->isEmpty()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No friends found matching your search'
+                ], 404);
+            }
+
+            // Map friends data with online status and mutual friends
+            $mappedFriends = $friends->getCollection()->map(function ($friend) use ($user) {
+                $userDetails = $this->authController->mapUserDetails($friend);
+                $userDetails = $this->addOnlineStatusToUserDetails($userDetails, $friend->id);
+                $userDetails = $this->addMutualFriendsToUserDetails($userDetails, $user->id, $friend->id);
+                
+                // Add friendship metadata - Convert string dates to Carbon instances
+                $respondedAt = $friend->responded_at ? \Carbon\Carbon::parse($friend->responded_at) : null;
+                $requestedAt = $friend->requested_at ? \Carbon\Carbon::parse($friend->requested_at) : null;
+                $friendshipCreatedAt = $friend->friendship_created_at ? \Carbon\Carbon::parse($friend->friendship_created_at) : null;
+                
+                $userDetails['friendship_info'] = [
+                    'responded_at' => $respondedAt,
+                    'responded_at_human' => $respondedAt ? $respondedAt->diffForHumans() : null,
+                    'requested_at' => $requestedAt,
+                    'requested_at_human' => $requestedAt ? $requestedAt->diffForHumans() : null,
+                    'friendship_created_at' => $friendshipCreatedAt
+                ];
+                
+                return $userDetails;
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Friends search results retrieved successfully',
+                'data' => [
+                    'friends' => $mappedFriends,
+                    'total_friends' => $friends->total(),
+                    'search_query' => $searchQuery,
+                    'sorting' => [
+                        'sort_by' => $sortBy,
+                        'sort_order' => $sortOrder
+                    ],
+                    'pagination' => [
+                        'current_page' => $friends->currentPage(),
+                        'last_page' => $friends->lastPage(),
+                        'per_page' => $friends->perPage(),
+                        'total' => $friends->total(),
+                        'from' => $friends->firstItem(),
+                        'to' => $friends->lastItem(),
+                        'has_more_pages' => $friends->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to search friends',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+     }
+
+     public function deleteFriendship(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'friend_id' => 'required|integer|exists:users,id'
+             ]);
+ 
+             $user = Auth::guard('user')->user();
+             $friendId = $validatedData['friend_id'];
+ 
+             // Check if trying to delete friendship with themselves
+             if ($user->id == $friendId) {
+                 return response()->json([
+                     'status_code' => 400,
+                     'success' => false,
+                     'message' => 'Invalid operation'
+                 ], 400);
+             }
+ 
+             // Find the friendship
+             $friendship = Friendship::where(function ($query) use ($user, $friendId) {
+                 $query->where('user_id', $user->id)->where('friend_id', $friendId);
+             })->orWhere(function ($query) use ($user, $friendId) {
+                 $query->where('user_id', $friendId)->where('friend_id', $user->id);
+             })->first();
+ 
+             if (!$friendship) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'Friendship not found'
+                 ], 404);
+             }
+ 
+             // Check if friendship is in a state that can be deleted
+             if (!in_array($friendship->status, ['accepted', 'pending', 'declined'])) {
+                 return response()->json([
+                     'status_code' => 400,
+                     'success' => false,
+                     'message' => 'Cannot delete this friendship'
+                 ], 400);
+             }
+ 
+             // Delete the friendship
+             $friendship->delete();
+ 
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Friendship deleted successfully'
+             ], 200);
+ 
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to delete friendship',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+ 
+     public function blockFriend(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'friend_id' => 'required|integer|exists:users,id'
+             ]);
+ 
+             $user = Auth::guard('user')->user();
+             $friendId = $validatedData['friend_id'];
+ 
+             // Check if trying to block themselves
+             if ($user->id == $friendId) {
+                 return response()->json([
+                     'status_code' => 400,
+                     'success' => false,
+                     'message' => 'You cannot block yourself'
+                 ], 400);
+             }
+ 
+             // Find existing friendship or create new one
+             $friendship = Friendship::where(function ($query) use ($user, $friendId) {
+                 $query->where('user_id', $user->id)->where('friend_id', $friendId);
+             })->orWhere(function ($query) use ($user, $friendId) {
+                 $query->where('user_id', $friendId)->where('friend_id', $user->id);
+             })->first();
+ 
+             if ($friendship) {
+                 // Update existing friendship to blocked
+                 if ($friendship->status === 'blocked') {
+                     return response()->json([
+                         'status_code' => 400,
+                         'success' => false,
+                         'message' => 'User is already blocked'
+                     ], 400);
+                 }
+ 
+                 $friendship->block();
+             } else {
+                 // Create new friendship with blocked status
+                 $friendship = Friendship::create([
+                     'user_id' => $user->id,
+                     'friend_id' => $friendId,
+                     'status' => 'blocked',
+                     'requested_at' => now(),
+                     'responded_at' => now()
+                 ]);
+             }
+ 
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'User blocked successfully'
+             ], 200);
+ 
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to block user',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
+
+    
+
+
+
+
     public function sendFriendRequest(Request $request)
     {
         try {
@@ -188,9 +604,6 @@ class FriendController extends Controller
         }
     }
 
-    /**
-     * Get pending friend requests
-     */
     public function getPendingRequests(Request $request)
     {
         try {
@@ -243,9 +656,6 @@ class FriendController extends Controller
         }
     }
 
-    /**
-     * Accept friend request
-     */
     public function acceptFriendRequest(Request $request, $friendshipId)
     {
         try {
@@ -282,9 +692,6 @@ class FriendController extends Controller
         }
     }
 
-    /**
-     * Decline friend request
-     */
     public function declineFriendRequest(Request $request, $friendshipId)
     {
         try {
@@ -321,15 +728,5 @@ class FriendController extends Controller
         }
     }
 
-    /**
-     * Get profile image URL
-     */
-    private function getProfileImageUrl($user)
-    {
-        if ($user->provider === 'google' && $user->img) {
-            return $user->img;
-        }
-        
-        return $user->img ? config('app.url') . '/storage/' . $user->img : null;
-    }
+
 } 

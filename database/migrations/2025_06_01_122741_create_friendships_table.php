@@ -18,6 +18,7 @@ return new class extends Migration
             $table->enum('status', ['pending', 'accepted', 'blocked', 'declined'])->default('pending');
             $table->timestamp('requested_at')->useCurrent();
             $table->timestamp('responded_at')->nullable();
+            $table->timestamp('accepted_at')->nullable();
             $table->timestamps();
 
             // Ensure unique friendship pairs
