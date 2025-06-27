@@ -14,12 +14,14 @@ class Friendship extends Model
         'friend_id',
         'status',
         'requested_at',
-        'responded_at'
+        'responded_at',
+        'accepted_at'
     ];
 
     protected $casts = [
         'requested_at' => 'datetime',
         'responded_at' => 'datetime',
+        'accepted_at' => 'datetime',
     ];
 
     /**

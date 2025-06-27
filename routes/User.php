@@ -213,12 +213,23 @@ Route::group(['prefix' => 'api/v1'], function () {
 
     //=================================== User Friends =============================
 
-    Route::group(['prefix' => 'friends/friend-requests' , 'middleware' => ['user.auth']], function () {
+    Route::group(['prefix' => 'friends' , 'middleware' => ['user.auth']], function () {
         
       Route::group(['controller' => FriendController::class], function () {
 
-        Route::get('/for-post-privacy' , 'getFriendsForPostPrivacy');
-        
+        Route::post('/get-friends' , 'getFriends');
+
+        Route::post('/search-friends' , 'searchFriends');
+
+        Route::post('/delete-friend-ship' , 'deleteFriendShip');
+
+        Route::post('/block-friend' , 'blockFriend');
+
+
+
+
+        Route::post('/accept-friend-request' , 'acceptFriendRequest');
+
         Route::post('/send-request' , 'sendFriendRequest');
         
         Route::get('/pending-requests' , 'getPendingRequests');
