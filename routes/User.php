@@ -231,17 +231,19 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/cancel-friend-request' , 'cancelFriendRequest');
 
-
-
         Route::post('/accept-friend-request' , 'acceptFriendRequest');
+
+        Route::post('/decline-friend-request' , 'declineFriendRequest');
+
+
+
+
 
         Route::post('/send-request' , 'sendFriendRequest');
         
         Route::get('/pending-requests' , 'getPendingRequests');
         
-        Route::post('/accept/{friendshipId}' , 'acceptFriendRequest');
         
-        Route::post('/decline/{friendshipId}' , 'declineFriendRequest');
     
       });
     });
