@@ -225,6 +225,11 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/block-friend' , 'blockFriend');
 
+        Route::post('/get-sent-requests' , 'getSentRequests');
+
+        Route::post('/search-sent-requests' , 'searchSentRequests');
+
+        Route::post('/cancel-friend-request' , 'cancelFriendRequest');
 
 
 
