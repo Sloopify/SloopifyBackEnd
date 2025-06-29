@@ -104,4 +104,15 @@ class Friendship extends Model
             'responded_at' => now()
         ]);
     }
+
+    /**
+     * Cancel the friendship request
+     */
+    public function cancel()
+    {
+        $this->update([
+            'status' => 'cancelled',
+            'responded_at' => now()
+        ]);
+    }
 } 

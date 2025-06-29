@@ -425,7 +425,7 @@ class FriendController extends Controller
              }
  
              // Check if friendship is in a state that can be deleted
-             if (!in_array($friendship->status, ['accepted', 'pending', 'declined'])) {
+             if (!in_array($friendship->status, ['accepted', 'pending', 'declined', 'cancelled'])) {
                  return response()->json([
                      'status_code' => 400,
                      'success' => false,
@@ -529,15 +529,375 @@ class FriendController extends Controller
              ], 500);
          }
      }
+ 
+     public function getSentRequests(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'page' => 'nullable|integer|min:1',
+                 'per_page' => 'nullable|integer|min:1|max:100',
+                 'sort_by' => 'nullable|string|in:name,date_sent,status',
+                 'sort_order' => 'nullable|string|in:asc,desc',
+                 'status' => 'nullable|string|in:pending,declined,cancelled,all'
+             ]);
+
+             $user = Auth::guard('user')->user();
+             $perPage = $validatedData['per_page'] ?? 20;
+             $sortBy = $validatedData['sort_by'] ?? 'date_sent';
+             $sortOrder = $validatedData['sort_order'] ?? 'desc';
+             $statusFilter = $validatedData['status'] ?? 'all';
+             
+             if (!$user) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'User not found'
+                 ], 404);
+             }
+
+             // Build query to get sent friend requests
+             $query = User::join('friendships', function($join) use ($user) {
+                 $join->on('friendships.friend_id', '=', 'users.id')
+                      ->where('friendships.user_id', $user->id);
+             })
+             ->select('users.*', 'friendships.id as friendship_id', 'friendships.status', 'friendships.requested_at', 'friendships.responded_at', 'friendships.created_at as friendship_created_at');
+
+             // Apply status filter
+             if ($statusFilter === 'pending') {
+                 $query->where('friendships.status', 'pending');
+             } elseif ($statusFilter === 'declined') {
+                 $query->where('friendships.status', 'declined');
+             } elseif ($statusFilter === 'cancelled') {
+                 $query->where('friendships.status', 'cancelled');
+             } else {
+                 // Show pending, declined, and cancelled requests
+                 $query->whereIn('friendships.status', ['pending', 'declined', 'cancelled']);
+             }
+
+             // Apply sorting
+             if ($sortBy === 'name') {
+                 $query->orderByRaw("CONCAT(users.first_name, ' ', users.last_name) {$sortOrder}");
+             } elseif ($sortBy === 'date_sent') {
+                 $query->orderBy('friendships.requested_at', $sortOrder);
+             } elseif ($sortBy === 'status') {
+                 $query->orderBy('friendships.status', $sortOrder);
+             }
+
+             // Get requests with pagination
+             $sentRequests = $query->paginate($perPage);
+
+             if($sentRequests->isEmpty()) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'No sent friend requests found'
+                 ], 404);
+             }
+
+             // Map requests data
+             $mappedRequests = $sentRequests->getCollection()->map(function ($friend) use ($user) {
+                 $userDetails = $this->authController->mapUserDetails($friend);
+                 $userDetails = $this->addOnlineStatusToUserDetails($userDetails, $friend->id);
+                 $userDetails = $this->addMutualFriendsToUserDetails($userDetails, $user->id, $friend->id);
+                 
+                 // Add friendship metadata - Convert string dates to Carbon instances
+                 $respondedAt = $friend->responded_at ? \Carbon\Carbon::parse($friend->responded_at) : null;
+                 $requestedAt = $friend->requested_at ? \Carbon\Carbon::parse($friend->requested_at) : null;
+                 $friendshipCreatedAt = $friend->friendship_created_at ? \Carbon\Carbon::parse($friend->friendship_created_at) : null;
+                 
+                 $userDetails['friendship_info'] = [
+                     'friendship_id' => $friend->friendship_id,
+                     'status' => $friend->status,
+                     'requested_at' => $requestedAt,
+                     'requested_at_human' => $requestedAt ? $requestedAt->diffForHumans() : null,
+                     'responded_at' => $respondedAt,
+                     'responded_at_human' => $respondedAt ? $respondedAt->diffForHumans() : null,
+                     'friendship_created_at' => $friendshipCreatedAt
+                 ];
+                 
+                 return $userDetails;
+             });
+
+             // Count requests by status
+             $pendingCount = Friendship::where('user_id', $user->id)->where('status', 'pending')->count();
+             $declinedCount = Friendship::where('user_id', $user->id)->where('status', 'declined')->count();
+             $cancelledCount = Friendship::where('user_id', $user->id)->where('status', 'cancelled')->count();
+
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Sent friend requests retrieved successfully',
+                 'data' => [
+                     'requests' => $mappedRequests,
+                     'total_requests' => $sentRequests->total(),
+                     'counts' => [
+                         'pending' => $pendingCount,
+                         'declined' => $declinedCount,
+                         'cancelled' => $cancelledCount,
+                         'total' => $pendingCount + $declinedCount + $cancelledCount
+                     ],
+                     'current_filter' => $statusFilter,
+                     'sorting' => [
+                         'sort_by' => $sortBy,
+                         'sort_order' => $sortOrder
+                     ],
+                     'pagination' => [
+                         'current_page' => $sentRequests->currentPage(),
+                         'last_page' => $sentRequests->lastPage(),
+                         'per_page' => $sentRequests->perPage(),
+                         'total' => $sentRequests->total(),
+                         'from' => $sentRequests->firstItem(),
+                         'to' => $sentRequests->lastItem(),
+                         'has_more_pages' => $sentRequests->hasMorePages()
+                     ]
+                 ]
+             ], 200);
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to retrieve sent requests',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
+     public function searchSentRequests(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'search' => 'required|string|min:1|max:255',
+                 'page' => 'nullable|integer|min:1',
+                 'per_page' => 'nullable|integer|min:1|max:100',
+                 'sort_by' => 'nullable|string|in:name,date_sent,status',
+                 'sort_order' => 'nullable|string|in:asc,desc',
+                 'status' => 'nullable|string|in:pending,declined,cancelled,all'
+             ]);
+
+             $user = Auth::guard('user')->user();
+             $searchQuery = $validatedData['search'];
+             $perPage = $validatedData['per_page'] ?? 20;
+             $sortBy = $validatedData['sort_by'] ?? 'date_sent';
+             $sortOrder = $validatedData['sort_order'] ?? 'desc';
+             $statusFilter = $validatedData['status'] ?? 'all';
+             
+             if (!$user) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'User not found'
+                 ], 404);
+             }
+
+             // Build query to search sent friend requests
+             $query = User::join('friendships', function($join) use ($user) {
+                 $join->on('friendships.friend_id', '=', 'users.id')
+                      ->where('friendships.user_id', $user->id);
+             })
+             ->where(function($query) use ($searchQuery) {
+                 $query->where('users.first_name', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.last_name', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.email', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.phone', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhereRaw("CONCAT(users.first_name, ' ', users.last_name) LIKE ?", ['%' . $searchQuery . '%']);
+             })
+             ->select('users.*', 'friendships.id as friendship_id', 'friendships.status', 'friendships.requested_at', 'friendships.responded_at', 'friendships.created_at as friendship_created_at');
+
+             // Apply status filter
+             if ($statusFilter === 'pending') {
+                 $query->where('friendships.status', 'pending');
+             } elseif ($statusFilter === 'declined') {
+                 $query->where('friendships.status', 'declined');
+             } elseif ($statusFilter === 'cancelled') {
+                 $query->where('friendships.status', 'cancelled');
+             } else {
+                 // Show pending, declined, and cancelled requests
+                 $query->whereIn('friendships.status', ['pending', 'declined', 'cancelled']);
+             }
+
+             // Apply sorting
+             if ($sortBy === 'name') {
+                 $query->orderByRaw("CONCAT(users.first_name, ' ', users.last_name) {$sortOrder}");
+             } elseif ($sortBy === 'date_sent') {
+                 $query->orderBy('friendships.requested_at', $sortOrder);
+             } elseif ($sortBy === 'status') {
+                 $query->orderBy('friendships.status', $sortOrder);
+             }
+
+             // Get requests with pagination
+             $sentRequests = $query->paginate($perPage);
+
+             if($sentRequests->isEmpty()) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'No sent friend requests found matching your search'
+                 ], 404);
+             }
+
+             // Map requests data
+             $mappedRequests = $sentRequests->getCollection()->map(function ($friend) use ($user) {
+                 $userDetails = $this->authController->mapUserDetails($friend);
+                 $userDetails = $this->addOnlineStatusToUserDetails($userDetails, $friend->id);
+                 $userDetails = $this->addMutualFriendsToUserDetails($userDetails, $user->id, $friend->id);
+                 
+                 // Add friendship metadata - Convert string dates to Carbon instances
+                 $respondedAt = $friend->responded_at ? \Carbon\Carbon::parse($friend->responded_at) : null;
+                 $requestedAt = $friend->requested_at ? \Carbon\Carbon::parse($friend->requested_at) : null;
+                 $friendshipCreatedAt = $friend->friendship_created_at ? \Carbon\Carbon::parse($friend->friendship_created_at) : null;
+                 
+                 $userDetails['friendship_info'] = [
+                     'friendship_id' => $friend->friendship_id,
+                     'status' => $friend->status,
+                     'requested_at' => $requestedAt,
+                     'requested_at_human' => $requestedAt ? $requestedAt->diffForHumans() : null,
+                     'responded_at' => $respondedAt,
+                     'responded_at_human' => $respondedAt ? $respondedAt->diffForHumans() : null,
+                     'friendship_created_at' => $friendshipCreatedAt
+                 ];
+                 
+                 return $userDetails;
+             });
+
+             // Count requests by status (for the search query)
+             $totalSearchQuery = User::join('friendships', function($join) use ($user) {
+                 $join->on('friendships.friend_id', '=', 'users.id')
+                      ->where('friendships.user_id', $user->id);
+             })
+             ->where(function($query) use ($searchQuery) {
+                 $query->where('users.first_name', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.last_name', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.email', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.phone', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhereRaw("CONCAT(users.first_name, ' ', users.last_name) LIKE ?", ['%' . $searchQuery . '%']);
+             });
+
+             $pendingCount = (clone $totalSearchQuery)->where('friendships.status', 'pending')->count();
+             $declinedCount = (clone $totalSearchQuery)->where('friendships.status', 'declined')->count();
+             $cancelledCount = (clone $totalSearchQuery)->where('friendships.status', 'cancelled')->count();
+
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Sent friend requests search results retrieved successfully',
+                 'data' => [
+                     'requests' => $mappedRequests,
+                     'total_requests' => $sentRequests->total(),
+                     'search_query' => $searchQuery,
+                     'counts' => [
+                         'pending' => $pendingCount,
+                         'declined' => $declinedCount,
+                         'cancelled' => $cancelledCount,
+                         'total' => $pendingCount + $declinedCount + $cancelledCount
+                     ],
+                     'current_filter' => $statusFilter,
+                     'sorting' => [
+                         'sort_by' => $sortBy,
+                         'sort_order' => $sortOrder
+                     ],
+                     'pagination' => [
+                         'current_page' => $sentRequests->currentPage(),
+                         'last_page' => $sentRequests->lastPage(),
+                         'per_page' => $sentRequests->perPage(),
+                         'total' => $sentRequests->total(),
+                         'from' => $sentRequests->firstItem(),
+                         'to' => $sentRequests->lastItem(),
+                         'has_more_pages' => $sentRequests->hasMorePages()
+                     ]
+                 ]
+             ], 200);
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to search sent requests',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+   
+     public function cancelFriendRequest(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'friend_id' => 'required|integer|exists:users,id'
+             ]);
+
+             $user = Auth::guard('user')->user();
+             $friendId = $validatedData['friend_id'];
+
+             // Check if trying to cancel request to themselves
+             if ($user->id == $friendId) {
+                 return response()->json([
+                     'status_code' => 400,
+                     'success' => false,
+                     'message' => 'Invalid operation'
+                 ], 400);
+             }
+
+             // Find the pending friend request sent by current user
+             $friendship = Friendship::where('user_id', $user->id)
+                 ->where('friend_id', $friendId)
+                 ->where('status', 'pending')
+                 ->first();
+
+             if (!$friendship) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'Pending friend request not found'
+                 ], 404);
+             }
+
+             // Cancel the friend request
+             $friendship->cancel();
+
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Friend request cancelled successfully'
+             ], 200);
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to cancel friend request',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
+     
 
 
-    
 
 
-
-
-    public function sendFriendRequest(Request $request)
-    {
+     public function sendFriendRequest(Request $request)
+     {
         try {
             $validatedData = $request->validate([
                 'friend_id' => 'required|integer|exists:users,id'
@@ -563,18 +923,25 @@ class FriendController extends Controller
             })->first();
 
             if ($existingFriendship) {
-                $message = match($existingFriendship->status) {
-                    'accepted' => 'You are already friends with this user',
-                    'pending' => 'Friend request already sent',
-                    'blocked' => 'Unable to send friend request',
-                    'declined' => 'Friend request was previously declined'
-                };
+                // Allow re-sending if previous request was cancelled by current user
+                if ($existingFriendship->status === 'cancelled' && $existingFriendship->user_id === $user->id) {
+                    // Delete the cancelled request and allow new one
+                    $existingFriendship->delete();
+                } else {
+                    $message = match($existingFriendship->status) {
+                        'accepted' => 'You are already friends with this user',
+                        'pending' => 'Friend request already sent',
+                        'blocked' => 'Unable to send friend request',
+                        'declined' => 'Friend request was previously declined',
+                        'cancelled' => 'Friend request was previously cancelled'
+                    };
 
-                return response()->json([
-                    'status_code' => 400,
-                    'success' => false,
-                    'message' => $message
-                ], 400);
+                    return response()->json([
+                        'status_code' => 400,
+                        'success' => false,
+                        'message' => $message
+                    ], 400);
+                }
             }
 
             // Create friend request
@@ -727,6 +1094,5 @@ class FriendController extends Controller
             ], 500);
         }
     }
-
 
 } 
