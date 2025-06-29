@@ -891,6 +891,193 @@ class FriendController extends Controller
          }
      }
 
+     public function acceptFriendRequest(Request $request)
+     {
+         try {
+             // Validate request data
+             $validatedData = $request->validate([
+                 'friendship_id' => 'required|integer|min:1|exists:friendships,id'
+             ]);
+
+             $friendshipId = $validatedData['friendship_id'];
+
+             $user = Auth::guard('user')->user();
+             
+             if (!$user) {
+                 return response()->json([
+                     'status_code' => 401,
+                     'success' => false,
+                     'message' => 'Unauthenticated'
+                 ], 401);
+             }
+
+             // Use database transaction for data integrity
+             DB::beginTransaction();
+
+             try {
+                 // Find the friendship with eager loading for requester details
+                 $friendship = Friendship::with(['user:id,first_name,last_name,img,provider'])
+                     ->where('id', $friendshipId)
+                     ->where('friend_id', $user->id)
+                     ->where('status', 'pending')
+                     ->first();
+
+                 if (!$friendship) {
+                     DB::rollBack();
+                     return response()->json([
+                         'status_code' => 404,
+                         'success' => false,
+                         'message' => 'Pending friend request not found'
+                     ], 404);
+                 }
+
+                 // Accept the friendship and set accepted_at timestamp
+                 $friendship->update([
+                     'status' => 'accepted',
+                     'responded_at' => now(),
+                     'accepted_at' => now()
+                 ]);
+
+                 DB::commit();
+
+                 // Prepare response data with requester details
+                 $friendData = [
+                     'friendship_id' => $friendship->id,
+                     'friend' => [
+                         'id' => $friendship->user->id,
+                         'name' => $friendship->user->first_name . ' ' . $friendship->user->last_name,
+                         'first_name' => $friendship->user->first_name,
+                         'last_name' => $friendship->user->last_name,
+                         'profile_image' => $this->getProfileImageUrl($friendship->user),
+                     ],
+                     'status' => $friendship->status,
+                     'requested_at' => $friendship->requested_at,
+                     'accepted_at' => $friendship->accepted_at,
+                     'accepted_at_human' => $friendship->accepted_at->diffForHumans()
+                 ];
+
+                 return response()->json([
+                     'status_code' => 200,
+                     'success' => true,
+                     'message' => 'Friend request accepted successfully',
+                     'data' => $friendData
+                 ], 200);
+
+             } catch (Exception $e) {
+                 DB::rollBack();
+                 throw $e;
+             }
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to accept friend request',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
+     
+     public function declineFriendRequest(Request $request)
+     {
+         try {
+             // Validate request data
+             $validatedData = $request->validate([
+                 'friendship_id' => 'required|integer|min:1|exists:friendships,id'
+             ]);
+
+             $friendshipId = $validatedData['friendship_id'];
+
+             $user = Auth::guard('user')->user();
+             
+             if (!$user) {
+                 return response()->json([
+                     'status_code' => 401,
+                     'success' => false,
+                     'message' => 'Unauthenticated'
+                 ], 401);
+             }
+
+             // Use database transaction for data integrity
+             DB::beginTransaction();
+
+             try {
+                 // Find the friendship with eager loading for requester details
+                 $friendship = Friendship::with(['user:id,first_name,last_name,img,provider'])
+                     ->where('id', $friendshipId)
+                     ->where('friend_id', $user->id)
+                     ->where('status', 'pending')
+                     ->first();
+
+                 if (!$friendship) {
+                     DB::rollBack();
+                     return response()->json([
+                         'status_code' => 404,
+                         'success' => false,
+                         'message' => 'Pending friend request not found'
+                     ], 404);
+                 }
+
+                 // Decline the friendship and set responded_at timestamp
+                 $friendship->update([
+                     'status' => 'declined',
+                     'responded_at' => now()
+                 ]);
+
+                 DB::commit();
+
+                 // Prepare response data with requester details
+                 $friendData = [
+                     'friendship_id' => $friendship->id,
+                     'declined_user' => [
+                         'id' => $friendship->user->id,
+                         'name' => $friendship->user->first_name . ' ' . $friendship->user->last_name,
+                         'first_name' => $friendship->user->first_name,
+                         'last_name' => $friendship->user->last_name,
+                         'profile_image' => $this->getProfileImageUrl($friendship->user),
+                     ],
+                     'status' => $friendship->status,
+                     'requested_at' => $friendship->requested_at,
+                     'declined_at' => $friendship->responded_at,
+                     'declined_at_human' => $friendship->responded_at->diffForHumans()
+                 ];
+
+                 return response()->json([
+                     'status_code' => 200,
+                     'success' => true,
+                     'message' => 'Friend request declined successfully',
+                     'data' => $friendData
+                 ], 200);
+
+             } catch (Exception $e) {
+                 DB::rollBack();
+                 throw $e;
+             }
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to decline friend request',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
      
 
 
@@ -969,7 +1156,7 @@ class FriendController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
-    }
+      }
 
     public function getPendingRequests(Request $request)
     {
@@ -1023,76 +1210,6 @@ class FriendController extends Controller
         }
     }
 
-    public function acceptFriendRequest(Request $request, $friendshipId)
-    {
-        try {
-            $user = Auth::guard('user')->user();
-            
-            $friendship = Friendship::where('id', $friendshipId)
-                ->where('friend_id', $user->id)
-                ->where('status', 'pending')
-                ->first();
-
-            if (!$friendship) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'Friend request not found'
-                ], 404);
-            }
-
-            $friendship->accept();
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Friend request accepted successfully'
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to accept friend request',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function declineFriendRequest(Request $request, $friendshipId)
-    {
-        try {
-            $user = Auth::guard('user')->user();
-            
-            $friendship = Friendship::where('id', $friendshipId)
-                ->where('friend_id', $user->id)
-                ->where('status', 'pending')
-                ->first();
-
-            if (!$friendship) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'Friend request not found'
-                ], 404);
-            }
-
-            $friendship->decline();
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Friend request declined successfully'
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to decline friend request',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
+    
 
 } 

@@ -79,7 +79,8 @@ class Friendship extends Model
     {
         $this->update([
             'status' => 'accepted',
-            'responded_at' => now()
+            'responded_at' => now(),
+            'accepted_at' => now()
         ]);
     }
 
