@@ -231,6 +231,10 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/cancel-friend-request' , 'cancelFriendRequest');
 
+        Route::post('/get-received-requests' , 'getReceivedRequests');
+
+        Route::post('/search-received-requests' , 'searchReceivedRequests');
+
         Route::post('/accept-friend-request' , 'acceptFriendRequest');
 
         Route::post('/decline-friend-request' , 'declineFriendRequest');
