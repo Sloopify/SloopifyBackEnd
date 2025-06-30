@@ -891,6 +891,242 @@ class FriendController extends Controller
          }
      }
 
+     public function getReceivedRequests(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'page' => 'nullable|integer|min:1',
+                 'per_page' => 'nullable|integer|min:1|max:100',
+                 'sort_by' => 'nullable|string|in:name,date_sent',
+                 'sort_order' => 'nullable|string|in:asc,desc'
+             ]);
+
+             $user = Auth::guard('user')->user();
+             $perPage = $validatedData['per_page'] ?? 20;
+             $sortBy = $validatedData['sort_by'] ?? 'date_sent';
+             $sortOrder = $validatedData['sort_order'] ?? 'desc';
+             
+             if (!$user) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'User not found'
+                 ], 404);
+             }
+
+             // Build query to get pending friend requests received by current user
+             $query = User::join('friendships', function($join) use ($user) {
+                 $join->on('friendships.user_id', '=', 'users.id')
+                      ->where('friendships.friend_id', $user->id);
+             })
+             ->where('friendships.status', 'pending')
+             ->select('users.*', 'friendships.id as friendship_id', 'friendships.status', 'friendships.requested_at', 'friendships.responded_at', 'friendships.created_at as friendship_created_at');
+
+             // Apply sorting
+             if ($sortBy === 'name') {
+                 $query->orderByRaw("CONCAT(users.first_name, ' ', users.last_name) {$sortOrder}");
+             } elseif ($sortBy === 'date_sent') {
+                 $query->orderBy('friendships.requested_at', $sortOrder);
+             }
+
+             // Get requests with pagination
+             $pendingRequests = $query->paginate($perPage);
+
+             if($pendingRequests->isEmpty()) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'No pending friend requests found'
+                 ], 404);
+             }
+
+             // Map requests data
+             $mappedRequests = $pendingRequests->getCollection()->map(function ($requester) use ($user) {
+                 $userDetails = $this->authController->mapUserDetails($requester);
+                 $userDetails = $this->addOnlineStatusToUserDetails($userDetails, $requester->id);
+                 $userDetails = $this->addMutualFriendsToUserDetails($userDetails, $user->id, $requester->id);
+                 
+                 // Add friendship metadata - Convert string dates to Carbon instances
+                 $requestedAt = $requester->requested_at ? \Carbon\Carbon::parse($requester->requested_at) : null;
+                 $respondedAt = $requester->responded_at ? \Carbon\Carbon::parse($requester->responded_at) : null;
+                 $friendshipCreatedAt = $requester->friendship_created_at ? \Carbon\Carbon::parse($requester->friendship_created_at) : null;
+                 
+                 $userDetails['friendship_info'] = [
+                     'friendship_id' => $requester->friendship_id,
+                     'status' => $requester->status,
+                     'requested_at' => $requestedAt,
+                     'requested_at_human' => $requestedAt ? $requestedAt->diffForHumans() : null,
+                     'responded_at' => $respondedAt,
+                     'responded_at_human' => $respondedAt ? $respondedAt->diffForHumans() : null,
+                     'friendship_created_at' => $friendshipCreatedAt
+                 ];
+                 
+                 return $userDetails;
+             });
+
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Pending friend requests retrieved successfully',
+                 'data' => [
+                     'requests' => $mappedRequests,
+                     'total_requests' => $pendingRequests->total(),
+                     'sorting' => [
+                         'sort_by' => $sortBy,
+                         'sort_order' => $sortOrder
+                     ],
+                     'pagination' => [
+                         'current_page' => $pendingRequests->currentPage(),
+                         'last_page' => $pendingRequests->lastPage(),
+                         'per_page' => $pendingRequests->perPage(),
+                         'total' => $pendingRequests->total(),
+                         'from' => $pendingRequests->firstItem(),
+                         'to' => $pendingRequests->lastItem(),
+                         'has_more_pages' => $pendingRequests->hasMorePages()
+                     ]
+                 ]
+             ], 200);
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to retrieve pending requests',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
+     public function searchReceivedRequests(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'search' => 'required|string|min:1|max:255',
+                 'page' => 'nullable|integer|min:1',
+                 'per_page' => 'nullable|integer|min:1|max:100',
+                 'sort_by' => 'nullable|string|in:name,date_sent',
+                 'sort_order' => 'nullable|string|in:asc,desc'
+             ]);
+
+             $user = Auth::guard('user')->user();
+             $searchQuery = $validatedData['search'];
+             $perPage = $validatedData['per_page'] ?? 20;
+             $sortBy = $validatedData['sort_by'] ?? 'date_sent';
+             $sortOrder = $validatedData['sort_order'] ?? 'desc';
+             
+             if (!$user) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'User not found'
+                 ], 404);
+             }
+
+             // Build query to search pending friend requests received by current user
+             $query = User::join('friendships', function($join) use ($user) {
+                 $join->on('friendships.user_id', '=', 'users.id')
+                      ->where('friendships.friend_id', $user->id);
+             })
+             ->where('friendships.status', 'pending')
+             ->where(function($query) use ($searchQuery) {
+                 $query->where('users.first_name', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.last_name', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.email', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhere('users.phone', 'LIKE', '%' . $searchQuery . '%')
+                       ->orWhereRaw("CONCAT(users.first_name, ' ', users.last_name) LIKE ?", ['%' . $searchQuery . '%']);
+             })
+             ->select('users.*', 'friendships.id as friendship_id', 'friendships.status', 'friendships.requested_at', 'friendships.responded_at', 'friendships.created_at as friendship_created_at');
+
+             // Apply sorting
+             if ($sortBy === 'name') {
+                 $query->orderByRaw("CONCAT(users.first_name, ' ', users.last_name) {$sortOrder}");
+             } elseif ($sortBy === 'date_sent') {
+                 $query->orderBy('friendships.requested_at', $sortOrder);
+             }
+
+             // Get requests with pagination
+             $pendingRequests = $query->paginate($perPage);
+
+             if($pendingRequests->isEmpty()) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'No pending friend requests found matching your search'
+                 ], 404);
+             }
+
+             // Map requests data
+             $mappedRequests = $pendingRequests->getCollection()->map(function ($requester) use ($user) {
+                 $userDetails = $this->authController->mapUserDetails($requester);
+                 $userDetails = $this->addOnlineStatusToUserDetails($userDetails, $requester->id);
+                 $userDetails = $this->addMutualFriendsToUserDetails($userDetails, $user->id, $requester->id);
+                 
+                 // Add friendship metadata - Convert string dates to Carbon instances
+                 $requestedAt = $requester->requested_at ? \Carbon\Carbon::parse($requester->requested_at) : null;
+                 $respondedAt = $requester->responded_at ? \Carbon\Carbon::parse($requester->responded_at) : null;
+                 $friendshipCreatedAt = $requester->friendship_created_at ? \Carbon\Carbon::parse($requester->friendship_created_at) : null;
+                 
+                 $userDetails['friendship_info'] = [
+                     'friendship_id' => $requester->friendship_id,
+                     'status' => $requester->status,
+                     'requested_at' => $requestedAt,
+                     'requested_at_human' => $requestedAt ? $requestedAt->diffForHumans() : null,
+                     'responded_at' => $respondedAt,
+                     'responded_at_human' => $respondedAt ? $respondedAt->diffForHumans() : null,
+                     'friendship_created_at' => $friendshipCreatedAt
+                 ];
+                 
+                 return $userDetails;
+             });
+
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Pending friend requests search results retrieved successfully',
+                 'data' => [
+                     'requests' => $mappedRequests,
+                     'total_requests' => $pendingRequests->total(),
+                     'search_query' => $searchQuery,
+                     'sorting' => [
+                         'sort_by' => $sortBy,
+                         'sort_order' => $sortOrder
+                     ],
+                     'pagination' => [
+                         'current_page' => $pendingRequests->currentPage(),
+                         'last_page' => $pendingRequests->lastPage(),
+                         'per_page' => $pendingRequests->perPage(),
+                         'total' => $pendingRequests->total(),
+                         'from' => $pendingRequests->firstItem(),
+                         'to' => $pendingRequests->lastItem(),
+                         'has_more_pages' => $pendingRequests->hasMorePages()
+                     ]
+                 ]
+             ], 200);
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to search pending requests',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
      public function acceptFriendRequest(Request $request)
      {
          try {
@@ -985,7 +1221,6 @@ class FriendController extends Controller
          }
      }
 
-     
      public function declineFriendRequest(Request $request)
      {
          try {
@@ -1078,137 +1313,137 @@ class FriendController extends Controller
              ], 500);
          }
      }
-     
 
+  
+    
 
+    //  public function sendFriendRequest(Request $request)
+    //  {
+        
+    //     try {
+    //         $validatedData = $request->validate([
+    //             'friend_id' => 'required|integer|exists:users,id'
+    //         ]);
 
+    //         $user = Auth::guard('user')->user();
+    //         $friendId = $validatedData['friend_id'];
 
-     public function sendFriendRequest(Request $request)
-     {
-        try {
-            $validatedData = $request->validate([
-                'friend_id' => 'required|integer|exists:users,id'
-            ]);
+    //         // Check if trying to add themselves
+    //         if ($user->id == $friendId) {
+    //             return response()->json([
+    //                 'status_code' => 400,
+    //                 'success' => false,
+    //                 'message' => 'You cannot send a friend request to yourself'
+    //             ], 400);
+    //         }
 
-            $user = Auth::guard('user')->user();
-            $friendId = $validatedData['friend_id'];
+    //         // Check if friendship already exists
+    //         $existingFriendship = Friendship::where(function ($query) use ($user, $friendId) {
+    //             $query->where('user_id', $user->id)->where('friend_id', $friendId);
+    //         })->orWhere(function ($query) use ($user, $friendId) {
+    //             $query->where('user_id', $friendId)->where('friend_id', $user->id);
+    //         })->first();
 
-            // Check if trying to add themselves
-            if ($user->id == $friendId) {
-                return response()->json([
-                    'status_code' => 400,
-                    'success' => false,
-                    'message' => 'You cannot send a friend request to yourself'
-                ], 400);
-            }
+    //         if ($existingFriendship) {
+    //             // Allow re-sending if previous request was cancelled by current user
+    //             if ($existingFriendship->status === 'cancelled' && $existingFriendship->user_id === $user->id) {
+    //                 // Delete the cancelled request and allow new one
+    //                 $existingFriendship->delete();
+    //             } else {
+    //                 $message = match($existingFriendship->status) {
+    //                     'accepted' => 'You are already friends with this user',
+    //                     'pending' => 'Friend request already sent',
+    //                     'blocked' => 'Unable to send friend request',
+    //                     'declined' => 'Friend request was previously declined',
+    //                     'cancelled' => 'Friend request was previously cancelled'
+    //                 };
 
-            // Check if friendship already exists
-            $existingFriendship = Friendship::where(function ($query) use ($user, $friendId) {
-                $query->where('user_id', $user->id)->where('friend_id', $friendId);
-            })->orWhere(function ($query) use ($user, $friendId) {
-                $query->where('user_id', $friendId)->where('friend_id', $user->id);
-            })->first();
+    //                 return response()->json([
+    //                     'status_code' => 400,
+    //                     'success' => false,
+    //                     'message' => $message
+    //                 ], 400);
+    //             }
+    //         }
 
-            if ($existingFriendship) {
-                // Allow re-sending if previous request was cancelled by current user
-                if ($existingFriendship->status === 'cancelled' && $existingFriendship->user_id === $user->id) {
-                    // Delete the cancelled request and allow new one
-                    $existingFriendship->delete();
-                } else {
-                    $message = match($existingFriendship->status) {
-                        'accepted' => 'You are already friends with this user',
-                        'pending' => 'Friend request already sent',
-                        'blocked' => 'Unable to send friend request',
-                        'declined' => 'Friend request was previously declined',
-                        'cancelled' => 'Friend request was previously cancelled'
-                    };
+    //         // Create friend request
+    //         $friendship = $user->sendFriendRequest($friendId);
 
-                    return response()->json([
-                        'status_code' => 400,
-                        'success' => false,
-                        'message' => $message
-                    ], 400);
-                }
-            }
+    //         return response()->json([
+    //             'status_code' => 201,
+    //             'success' => true,
+    //             'message' => 'Friend request sent successfully',
+    //             'data' => $friendship
+    //         ], 201);
 
-            // Create friend request
-            $friendship = $user->sendFriendRequest($friendId);
+    //     } catch (ValidationException $e) {
+    //         return response()->json([
+    //             'status_code' => 422,
+    //             'success' => false,
+    //             'message' => 'Validation failed',
+    //             'errors' => $e->errors()
+    //         ], 422);
+    //     } catch (Exception $e) {
+    //         return response()->json([
+    //             'status_code' => 500,
+    //             'success' => false,
+    //             'message' => 'Failed to send friend request',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    //   }
 
-            return response()->json([
-                'status_code' => 201,
-                'success' => true,
-                'message' => 'Friend request sent successfully',
-                'data' => $friendship
-            ], 201);
-
-        } catch (ValidationException $e) {
-            return response()->json([
-                'status_code' => 422,
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to send friend request',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-      }
-
-    public function getPendingRequests(Request $request)
-    {
-        try {
-            $user = Auth::guard('user')->user();
+    // public function getPendingRequests(Request $request)
+    // {
+    //     try {
+    //         $user = Auth::guard('user')->user();
             
-            $pendingRequests = $user->receivedFriendRequests()
-                ->pending()
-                ->with(['user:id,first_name,last_name,img,provider'])
-                ->orderBy('created_at', 'desc')
-                ->paginate(20);
+    //         $pendingRequests = $user->receivedFriendRequests()
+    //             ->pending()
+    //             ->with(['user:id,first_name,last_name,img,provider'])
+    //             ->orderBy('created_at', 'desc')
+    //             ->paginate(20);
 
-            $formattedRequests = $pendingRequests->getCollection()->map(function ($friendship) {
-                return [
-                    'id' => $friendship->id,
-                    'user' => [
-                        'id' => $friendship->user->id,
-                        'name' => $friendship->user->first_name . ' ' . $friendship->user->last_name,
-                        'first_name' => $friendship->user->first_name,
-                        'last_name' => $friendship->user->last_name,
-                        'profile_image' => $this->getProfileImageUrl($friendship->user),
-                    ],
-                    'requested_at' => $friendship->requested_at,
-                    'status' => $friendship->status
-                ];
-            });
+    //         $formattedRequests = $pendingRequests->getCollection()->map(function ($friendship) {
+    //             return [
+    //                 'id' => $friendship->id,
+    //                 'user' => [
+    //                     'id' => $friendship->user->id,
+    //                     'name' => $friendship->user->first_name . ' ' . $friendship->user->last_name,
+    //                     'first_name' => $friendship->user->first_name,
+    //                     'last_name' => $friendship->user->last_name,
+    //                     'profile_image' => $this->getProfileImageUrl($friendship->user),
+    //                 ],
+    //                 'requested_at' => $friendship->requested_at,
+    //                 'status' => $friendship->status
+    //             ];
+    //         });
 
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Pending friend requests retrieved successfully',
-                'data' => $formattedRequests,
-                'pagination' => [
-                    'current_page' => $pendingRequests->currentPage(),
-                    'last_page' => $pendingRequests->lastPage(),
-                    'per_page' => $pendingRequests->perPage(),
-                    'total' => $pendingRequests->total(),
-                    'from' => $pendingRequests->firstItem(),
-                    'to' => $pendingRequests->lastItem(),
-                    'has_more_pages' => $pendingRequests->hasMorePages()
-                ]
-            ], 200);
+    //         return response()->json([
+    //             'status_code' => 200,
+    //             'success' => true,
+    //             'message' => 'Pending friend requests retrieved successfully',
+    //             'data' => $formattedRequests,
+    //             'pagination' => [
+    //                 'current_page' => $pendingRequests->currentPage(),
+    //                 'last_page' => $pendingRequests->lastPage(),
+    //                 'per_page' => $pendingRequests->perPage(),
+    //                 'total' => $pendingRequests->total(),
+    //                 'from' => $pendingRequests->firstItem(),
+    //                 'to' => $pendingRequests->lastItem(),
+    //                 'has_more_pages' => $pendingRequests->hasMorePages()
+    //             ]
+    //         ], 200);
 
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to retrieve pending requests',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
+    //     } catch (Exception $e) {
+    //         return response()->json([
+    //             'status_code' => 500,
+    //             'success' => false,
+    //             'message' => 'Failed to retrieve pending requests',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
 
     
 
