@@ -851,14 +851,6 @@ class PostController extends Controller
             $perPage = $validatedData['per_page'] ?? 20;
 
             $feelings = PostFeeling::where('status', 'active')->paginate($perPage);
-            
-            if($feelings->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No feelings found'
-                ], 404);
-            }
 
             $mappedFeelings = $feelings->getCollection()->map(function ($feeling) {
                 return $this->mapFeelings(collect([$feeling]))->first();
@@ -918,18 +910,10 @@ class PostController extends Controller
                 ->orderBy('category')
                 ->pluck('category')
                 ->values();
-            
-            if($allCategories->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No activity categories found'
-                ], 404);
-            }
 
             // Manual pagination
             $total = $allCategories->count();
-            $lastPage = ceil($total / $perPage);
+            $lastPage = $total > 0 ? ceil($total / $perPage) : 1;
             $offset = ($page - 1) * $perPage;
             
             // Get categories for current page
@@ -987,14 +971,6 @@ class PostController extends Controller
         $activities = PostActivity::where('category', $validatedData['category'])
             ->where('status', 'active')
             ->paginate($perPage);
-            
-        if($activities->isEmpty()) {
-            return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'No activities found by category name'
-            ], 404);
-        }
 
         $mappedActivities = $activities->getCollection()->map(function ($activity) {
             return $this->mapActivities(collect([$activity]))->first();
@@ -1048,14 +1024,6 @@ class PostController extends Controller
             $feelings = PostFeeling::where('name', 'like', '%' . $validatedData['search'] . '%')
                 ->where('status', 'active')
                 ->paginate($perPage);
-                
-            if($feelings->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No feelings found'
-                ], 404);
-            }
 
             $mappedFeelings = $feelings->getCollection()->map(function ($feeling) {
                 return $this->mapFeelings(collect([$feeling]))->first();
@@ -1117,18 +1085,10 @@ class PostController extends Controller
                 ->orderBy('category')
                 ->pluck('category')
                 ->values();
-                
-            if($allCategories->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No categories found matching your search'
-                ], 404);
-            }
 
             // Manual pagination
             $total = $allCategories->count();
-            $lastPage = ceil($total / $perPage);
+            $lastPage = $total > 0 ? ceil($total / $perPage) : 1;
             $offset = ($page - 1) * $perPage;
             
             // Get categories for current page
@@ -1186,14 +1146,6 @@ class PostController extends Controller
             $activities = PostActivity::where('name', 'like', '%' . $validatedData['search'] . '%')
                 ->where('status', 'active')
                 ->paginate($perPage);
-
-            if($activities->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No activities found'
-                ], 404);
-            }
 
             $mappedActivities = $activities->getCollection()->map(function ($activity) {
                 return $this->mapActivities(collect([$activity]))->first();
@@ -1260,14 +1212,6 @@ class PostController extends Controller
 
             // Get friends with pagination
             $friends = User::whereIn('id', $friendIds)->paginate($perPage);
-
-            if($friends->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No friends found'
-                ], 404);
-            }
 
             // Get specific friends IDs
             $specificFriendIds = \App\Models\SpecificFriends::where('user_id', $user->id)
@@ -1365,14 +1309,6 @@ class PostController extends Controller
                 })
                 ->paginate($perPage);
 
-            if ($friends->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No friends found matching your search'
-                ], 404);
-            }
-
             // Get specific friends IDs
             $specificFriendIds = \App\Models\SpecificFriends::where('user_id', $user->id)
                 ->pluck('friend_id')
@@ -1439,14 +1375,6 @@ class PostController extends Controller
             $personalOccasionCategories = PersonalOccasionCategory::where('status', 'active')
                 ->paginate($perPage);
 
-            if($personalOccasionCategories->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No personal occasion categories found'
-                ], 404);
-            }
-
             $mappedCategories = $personalOccasionCategories->getCollection()->map(function ($category) {
                 return $this->mapPersonalOccasionCategories(collect([$category]))->first();
             });
@@ -1500,14 +1428,6 @@ class PostController extends Controller
             }])->where('status', 'active')
             ->paginate($perPage);
 
-            if($personalOccasionCategories->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No personal occasion categories found'
-                ], 404);
-            }
-
             $mappedCategories = $personalOccasionCategories->getCollection()->map(function ($category) {
                 return $this->mapPersonalOccasionCategories(collect([$category]))->first();
             });
@@ -1560,14 +1480,6 @@ class PostController extends Controller
             $personalOccasionSettings = PersonalOccasionSetting::where('status', 'active')
                 ->where('personal_occasion_category_id', $validatedData['category_id'])
                 ->paginate($perPage);
-            
-            if($personalOccasionSettings->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No personal occasion settings found for this category'
-                ], 404);
-            }
 
             $mappedSettings = $personalOccasionSettings->getCollection()->map(function ($setting) {
                 return $this->mapPersonalOccasionSettings(collect([$setting]))->first();
@@ -1620,14 +1532,6 @@ class PostController extends Controller
             $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)
                 ->where('status', 'active')
                 ->paginate($perPage);
-
-            if($userPlaces->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No user places found'
-                ], 404);
-            }
 
             $mappedUserPlaces = $userPlaces->getCollection()->map(function ($userPlace) {
                 return $this->mapUserPlaces($userPlace);
@@ -1683,14 +1587,6 @@ class PostController extends Controller
                 ->where('name', 'like', '%' . $validatedData['search'] . '%')
                 ->paginate($perPage);
 
-            if($userPlaces->isEmpty()) {
-                return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No user places found'
-                ], 404);
-            }
-
             $mappedUserPlaces = $userPlaces->getCollection()->map(function ($userPlace) {
                 return $this->mapUserPlaces($userPlace);
             });
@@ -1728,13 +1624,13 @@ class PostController extends Controller
             $validatedData = $request->validate([
                 'place_id' => 'required|exists:user_places,id',
             ]);
-            $userPlace = UserPlace::where('user_id', Auth::guard('user')->user()->id)->findOrFail($validatedData['place_id']);
+            $userPlace = UserPlace::where('user_id', Auth::guard('user')->user()->id)->find($validatedData['place_id']);
 
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'User place retrieved successfully',
-                'data' => $this->mapUserPlaces($userPlace)
+                'data' => $userPlace ? $this->mapUserPlaces($userPlace) : null
             ], 200);
         } catch (ValidationException $e) {
             return response()->json([
