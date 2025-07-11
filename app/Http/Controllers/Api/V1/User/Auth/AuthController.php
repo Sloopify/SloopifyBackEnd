@@ -73,11 +73,7 @@ class AuthController extends Controller
         try {
             $validatedData = $request->validate([
                 'email' => 'required|email|exists:users,email',
-                'password' => [
-                    'required',
-                    'string',
-                    'min:8',
-                ],
+                'password' => 'required|string|min:8|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/',
                 'push_token' => 'nullable|string', // For push notifications
             ]);
 
@@ -239,11 +235,7 @@ class AuthController extends Controller
                     'string',
                     'regex:/^\+[1-9]\d{1,14}$/' // E.164 format validation (e.g. +963997482515)
                 ],
-                'password' => [
-                    'required',
-                    'string',
-                    'min:8',
-                ],
+                'password' => 'required|string|min:8|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/',
                 'push_token' => 'nullable|string', // For push notifications
             ]);
 
@@ -1317,7 +1309,7 @@ class AuthController extends Controller
                 'type' => 'required|string|in:email,phone',
                 'phone' => 'required_if:type,phone|string|exists:users,phone|regex:/^\+[1-9]\d{1,14}$/',
                 'email' => 'required_if:type,email|email|exists:users,email',
-                'password' => 'required|string|min:8',
+                'password' => 'required|string|min:8|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/',
                 'confirm_password' => 'required|string|min:8|same:password',
             ]);
 
@@ -1562,8 +1554,8 @@ class AuthController extends Controller
         try {
             $validatedData = $request->validate([
                 'type' => 'required|string|in:email,phone',
-                'old_password' => 'required|string|min:8',
-                'new_password' => 'required|string|min:8',
+                'old_password' => 'required|string|min:8|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/',
+                'new_password' => 'required|string|min:8|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/',
                 'confirm_password' => 'required|string|min:8|same:new_password',
             ]);
 
