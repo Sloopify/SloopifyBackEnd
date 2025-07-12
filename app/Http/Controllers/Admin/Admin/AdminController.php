@@ -55,7 +55,7 @@ class AdminController extends Controller
         $rolesIds = RolePermission::where('is_active', 1)->pluck('role_id')->toArray();
         $roles = Role::whereIn('id', $rolesIds)->get();
 
-        return view('admin.admin.index', compact('admins', 'roles'));
+        return view('admin.Admin.index', compact('admins', 'roles'));
     }
 
     public function store(Request $request)
@@ -115,9 +115,9 @@ class AdminController extends Controller
             $rolesIds = RolePermission::where('is_active', 1)->pluck('role_id')->toArray();
             $roles = Role::whereIn('id', $rolesIds)->get();
             
-            return view('admin.admin.edit', compact('admin', 'roles'));
+            return view('admin.Admin.edit', compact('admin', 'roles'));
         } catch (\Exception $e) {
-            return redirect()->route('admin.admin.index')->with('error_message', 'Admin not found: ' . $e->getMessage());
+            return redirect()->route('admin.Admin.index')->with('error_message', 'Admin not found: ' . $e->getMessage());
         }
     }
     
@@ -178,7 +178,7 @@ class AdminController extends Controller
             
             $admin->update($updateData);
             
-            return redirect()->route('admin.admin.index')->with('success_message', 'Admin updated successfully');
+            return redirect()->route('admin.Admin.index')->with('success_message', 'Admin updated successfully');
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error_message', 'Failed to update admin: ' . $e->getMessage());
         }
@@ -199,7 +199,7 @@ class AdminController extends Controller
                 'updated_by' => Auth::guard('admin')->user()->id,
             ]);
             
-            return redirect()->route('admin.admin.index')->with('success_message', 'Password updated successfully');
+            return redirect()->route('admin.Admin.index')->with('success_message', 'Password updated successfully');
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error_message', 'Failed to update password: ' . $e->getMessage());
         }
@@ -217,9 +217,87 @@ class AdminController extends Controller
             
             $admin->delete();
             
-            return redirect()->route('admin.admin.index')->with('success_message', 'Admin deleted successfully');
+            return redirect()->route('admin.Admin.index')->with('success_message', 'Admin deleted successfully');
         } catch (\Exception $e) {
-            return redirect()->route('admin.admin.index')->with('error_message', 'Failed to delete admin: ' . $e->getMessage());
+            return redirect()->route('admin.Admin.index')->with('error_message', 'Failed to delete admin: ' . $e->getMessage());
+        }
+    }
+
+    public function export(Request $request)
+    {
+        try {
+            $query = Admin::with('role');
+
+            // Apply the same filters as in index
+            if ($request->has('search') && $request->search != '') {
+                $searchTerm = $request->search;
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%' . $searchTerm . '%')
+                        ->orWhere('email', 'like', '%' . $searchTerm . '%')
+                        ->orWhere('phone', 'like', '%' . $searchTerm . '%');
+                });
+            }
+
+            if ($request->has('gender') && $request->gender != '') {
+                $query->where('gender', $request->gender);
+            }
+
+            if ($request->has('status') && $request->status != '') {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('from_date') && $request->from_date != '') {
+                $query->whereDate('created_at', '>=', $request->from_date);
+            }
+
+            if ($request->has('to_date') && $request->to_date != '') {
+                $query->whereDate('created_at', '<=', $request->to_date);
+            }
+
+            $admins = $query->get();
+
+            $filename = 'admins_export_' . date('Y-m-d_H-i-s') . '.csv';
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
+
+            $callback = function () use ($admins) {
+                $handle = fopen('php://output', 'w');
+                fputcsv($handle, [
+                    'ID', 'Name', 'Email', 'Phone', 'Gender', 'Birthday', 'Age', 
+                    'Status', 'Role', 'Created By', 'Created At', 'Updated At'
+                ]);
+
+                foreach ($admins as $admin) {
+                    // Calculate age
+                    $age = $admin->birthday ? \Carbon\Carbon::parse($admin->birthday)->age : 'N/A';
+                    
+                    // Get creator name
+                    $createdBy = $admin->createdBy ? $admin->createdBy->name : 'N/A';
+
+                    fputcsv($handle, [
+                        $admin->id,
+                        $admin->name,
+                        $admin->email,
+                        $admin->phone,
+                        ucfirst($admin->gender),
+                        $admin->birthday ?: 'N/A',
+                        $age,
+                        ucfirst($admin->status),
+                        $admin->role ? $admin->role->name : 'N/A',
+                        $createdBy,
+                        $admin->created_at->format('Y-m-d H:i:s'),
+                        $admin->updated_at->format('Y-m-d H:i:s'),
+                    ]);
+                }
+
+                fclose($handle);
+            };
+
+            return response()->stream($callback, 200, $headers);
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error_message', 'Failed to export admins: ' . $e->getMessage());
         }
     }
 }
