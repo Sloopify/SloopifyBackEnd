@@ -93,5 +93,22 @@
                 <div data-i18n="Settings">Settings</div>
             </a>
         </li>
+
+        <li class="menu-header small text-uppercase"><span class="menu-header-text">User Management</span></li>
+
+        <li class="menu-item {{ request()->routeIs('admin.interest.*') ? 'active open' : '' }}">
+            <a href="javascript:void(0);" class="menu-link menu-toggle">
+                <i class="menu-icon tf-icons bx bx-heart"></i>
+                <div data-i18n="Interest">Interest Manage</div>
+            </a>
+            <ul class="menu-sub">
+                <li class="menu-item {{ request()->routeIs('admin.interest.index') ? 'active' : '' }}">
+                    <a href="{{ route('admin.interest.index') }}" class="menu-link">
+                        <div data-i18n="Interest Manage">Interest Manage</div>
+                    </a>
+                </li>
+            </ul>
+        </li>
+
     </ul>
 </aside>
