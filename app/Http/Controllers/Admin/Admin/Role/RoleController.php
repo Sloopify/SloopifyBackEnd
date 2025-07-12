@@ -62,7 +62,7 @@ class RoleController extends Controller
             
         $allPermissions = Permission::where('is_active', 1)->get();
 
-        return view('admin.admin.role.index', compact('roles', 'adminPermissions', 'employeePermissions', 'allPermissions'));
+        return view('admin.Admin.role.index', compact('roles', 'adminPermissions', 'employeePermissions', 'allPermissions'));
     }
 
     public function store(Request $request)
@@ -95,7 +95,7 @@ class RoleController extends Controller
                 ]);
             }
 
-            return redirect()->route('admin.admin.role.index')->with('success_message_create', 'Role created successfully');
+            return redirect()->route('admin.Admin.role.index')->with('success_message_create', 'Role created successfully');
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error_message_create', 'Failed to create role: ' . $e->getMessage());
         }
@@ -123,9 +123,9 @@ class RoleController extends Controller
                 ->pluck('permission_id')
                 ->toArray();
             
-            return view('admin.admin.role.edit', compact('role', 'adminPermissions', 'employeePermissions', 'allPermissions', 'assignedPermissions'));
+            return view('admin.Admin.role.edit', compact('role', 'adminPermissions', 'employeePermissions', 'allPermissions', 'assignedPermissions'));
         } catch (\Exception $e) {
-            return redirect()->route('admin.admin.role.index')->with('error_message', 'Role not found: ' . $e->getMessage());
+            return redirect()->route('admin.Admin.role.index')->with('error_message', 'Role not found: ' . $e->getMessage());
         }
     }
 
@@ -177,7 +177,7 @@ class RoleController extends Controller
                 }
             }
             
-            return redirect()->route('admin.admin.role.index')->with('success_message', 'Role updated successfully');
+            return redirect()->route('admin.Admin.role.index')->with('success_message', 'Role updated successfully');
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error_message', 'Failed to update role: ' . $e->getMessage());
         }
@@ -191,7 +191,7 @@ class RoleController extends Controller
             // Check if the role is being used by any admins
             $adminCount = \App\Models\Admin::where('role_id', $id)->count();
             if ($adminCount > 0) {
-                return redirect()->route('admin.admin.role.index')
+                return redirect()->route('admin.Admin.role.index')
                     ->with('error_message', 'This role cannot be deleted because it is assigned to ' . $adminCount . ' admin(s).');
             }
             
@@ -201,15 +201,80 @@ class RoleController extends Controller
             // Delete the role
             $role->delete();
             
-            return redirect()->route('admin.admin.role.index')->with('success_message', 'Role deleted successfully');
+            return redirect()->route('admin.Admin.role.index')->with('success_message', 'Role deleted successfully');
         } catch (\Exception $e) {
-            return redirect()->route('admin.admin.role.index')->with('error_message', 'Failed to delete role: ' . $e->getMessage());
+            return redirect()->route('admin.Admin.role.index')->with('error_message', 'Failed to delete role: ' . $e->getMessage());
         }
     }
 
     public function export(Request $request)
     {
-        // Export functionality will be implemented here
-        // Similar to the admin export functionality
+        try {
+            $query = Role::query();
+
+            // Apply the same filters as in index
+            if ($request->has('search') && $request->search != '') {
+                $searchTerm = $request->search;
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%' . $searchTerm . '%')
+                      ->orWhere('description', 'like', '%' . $searchTerm . '%');
+                });
+            }
+
+            if ($request->has('status') && $request->status != '') {
+                $status = ($request->status == 1) ? 1 : 0;
+                $query->where('is_active', $status);
+            }
+
+            if ($request->has('type') && $request->type != '') {
+                $query->where('type', $request->type);
+            }
+
+            if ($request->has('from_date') && $request->from_date != '') {
+                $query->whereDate('created_at', '>=', $request->from_date);
+            }
+
+            if ($request->has('to_date') && $request->to_date != '') {
+                $query->whereDate('created_at', '<=', $request->to_date);
+            }
+
+            $roles = $query->get();
+
+            $filename = 'roles_export_' . date('Y-m-d_H-i-s') . '.csv';
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
+
+            $callback = function () use ($roles) {
+                $handle = fopen('php://output', 'w');
+                fputcsv($handle, ['ID', 'Name', 'Slug', 'Description', 'Type', 'Status', 'Permissions Count', 'Created At', 'Updated At']);
+
+                foreach ($roles as $role) {
+                    // Get active permissions count for this role
+                    $permissionsCount = RolePermission::where('role_id', $role->id)
+                        ->where('is_active', 1)
+                        ->count();
+
+                    fputcsv($handle, [
+                        $role->id,
+                        $role->name,
+                        $role->slug,
+                        $role->description ?? 'N/A',
+                        ucfirst($role->type),
+                        $role->is_active ? 'Active' : 'Inactive',
+                        $permissionsCount,
+                        $role->created_at->format('Y-m-d H:i:s'),
+                        $role->updated_at->format('Y-m-d H:i:s'),
+                    ]);
+                }
+
+                fclose($handle);
+            };
+
+            return response()->stream($callback, 200, $headers);
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error_message', 'Failed to export roles: ' . $e->getMessage());
+        }
     }
 } 

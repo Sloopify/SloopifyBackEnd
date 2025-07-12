@@ -3,8 +3,8 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\Auth\AuthController;
 use App\Http\Controllers\Admin\AdminController;
-use App\Http\Controllers\admin\Admin\AdminController as AdminAdminController;
-use App\Http\Controllers\admin\Admin\Role\RoleController;
+use App\Http\Controllers\Admin\Admin\AdminController as AdminAdminController;
+use App\Http\Controllers\Admin\Admin\Role\RoleController;
 use App\Http\Controllers\Admin\ProfileController;
 use App\Http\Controllers\Admin\Setting\SettingController;
 use App\Http\Controllers\Admin\Interest\InterestController;
