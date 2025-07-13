@@ -52,8 +52,8 @@ class PostController extends Controller
             return [
                 'id' => $feeling->id,
                 'name' => $feeling->name,
-                'mobile_icon' => $feeling->mobile_icon ? config('app.url') . asset('storage/feelings/mobile/' . $feeling->mobile_icon) : null,
-                'web_icon' => $feeling->web_icon ? config('app.url') . asset('storage/feelings/web/' . $feeling->web_icon) : null,
+                'mobile_icon' => $feeling->mobile_icon ? config('app.url') . asset('storage/' . $feeling->mobile_icon) : null,
+                'web_icon' => $feeling->web_icon ? config('app.url') . asset('storage/' . $feeling->web_icon) : null,
                 'status' => $feeling->status,
                 'created_at' => $feeling->created_at,
                 'updated_at' => $feeling->updated_at,

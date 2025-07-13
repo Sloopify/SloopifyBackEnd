@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\Admin\Role\RoleController;
 use App\Http\Controllers\Admin\ProfileController;
 use App\Http\Controllers\Admin\Setting\SettingController;
 use App\Http\Controllers\Admin\Interest\InterestController;
+use App\Http\Controllers\Admin\Feeling\FellingController;
 
 Route::get('/login' , [AuthController::class , 'loginPage'])->name('login.page');
 
@@ -78,7 +79,11 @@ Route::group(['middleware' => ['admin.auth']], function () {
         Route::post('/update-description', 'updateDescription')->name('update.description');
     });
 
+
     //=================================== User Management Routes =============================
+
+
+    //=================================== Interest Management Routes =============================
 
         Route::group(['prefix' => 'interest', 'as' => 'interest.' , 'controller' => InterestController::class], function () {
 
@@ -93,5 +98,24 @@ Route::group(['middleware' => ['admin.auth']], function () {
             Route::delete('/delete/{id}', 'delete')->name('delete');
 
             Route::get('/export', 'export')->name('export');
+        });
+
+
+        //=================================== Feeling Management Routes =============================
+
+        Route::group(['prefix' => 'feeling', 'as' => 'feeling.' , 'controller' => FellingController::class], function () {
+
+            Route::get('/index', 'index')->name('index');
+
+            Route::post('/store', 'store')->name('store');
+
+            Route::get('/edit/{id}', 'edit')->name('edit');
+
+            Route::put('/update/{id}', 'update')->name('update');
+
+            Route::delete('/delete/{id}', 'delete')->name('delete');
+
+            Route::get('/export', 'export')->name('export');
+            
         });
 });
