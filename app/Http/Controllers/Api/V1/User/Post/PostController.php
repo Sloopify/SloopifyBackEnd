@@ -67,8 +67,8 @@ class PostController extends Controller
             return [
                 'id' => $activity->id,
                 'name' => $activity->name,
-                'mobile_icon' => $activity->mobile_icon ? config('app.url') . asset('storage/activities/mobile/' . $activity->mobile_icon) : null,
-                'web_icon' => $activity->web_icon ? config('app.url') . asset('storage/activities/web/' . $activity->web_icon) : null,
+                'mobile_icon' => $activity->mobile_icon ? config('app.url') . asset('storage/' . $activity->mobile_icon) : null,
+                'web_icon' => $activity->web_icon ? config('app.url') . asset('storage/' . $activity->web_icon) : null,
                 'status' => $activity->status,
                 'category' => $activity->category,
                 'created_at' => $activity->created_at,
