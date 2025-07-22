@@ -194,10 +194,27 @@ class FriendController extends Controller
 
             if($friends->isEmpty()) {
                 return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No friends found'
-                ], 404);
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No friends found',
+                    'data' => [
+                        'friends' => [],
+                        'total_friends' => 0,
+                        'sorting' => [
+                            'sort_by' => $sortBy,
+                            'sort_order' => $sortOrder
+                        ],
+                        'pagination' => [
+                            'current_page' => $friends->currentPage(),
+                            'last_page' => $friends->lastPage(),
+                            'per_page' => $friends->perPage(),
+                            'total' => $friends->total(),
+                            'from' => $friends->firstItem(),
+                            'to' => $friends->lastItem(),
+                            'has_more_pages' => $friends->hasMorePages()
+                        ]
+                    ]
+                ], 200);
             }
 
             // Map friends data with online status and mutual friends
@@ -321,10 +338,28 @@ class FriendController extends Controller
 
             if($friends->isEmpty()) {
                 return response()->json([
-                    'status_code' => 404,
-                    'success' => false,
-                    'message' => 'No friends found matching your search'
-                ], 404);
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No friends found matching your search',
+                    'data' => [
+                        'friends' => [],
+                        'total_friends' => 0,
+                        'search_query' => $searchQuery,
+                        'sorting' => [
+                            'sort_by' => $sortBy,
+                            'sort_order' => $sortOrder
+                        ],
+                        'pagination' => [
+                            'current_page' => $friends->currentPage(),
+                            'last_page' => $friends->lastPage(),
+                            'per_page' => $friends->perPage(),
+                            'total' => $friends->total(),
+                            'from' => $friends->firstItem(),
+                            'to' => $friends->lastItem(),
+                            'has_more_pages' => $friends->hasMorePages()
+                        ]
+                    ]
+                ], 200);
             }
 
             // Map friends data with online status and mutual friends
@@ -588,10 +623,34 @@ class FriendController extends Controller
 
              if($sentRequests->isEmpty()) {
                  return response()->json([
-                     'status_code' => 404,
-                     'success' => false,
-                     'message' => 'No sent friend requests found'
-                 ], 404);
+                     'status_code' => 200,
+                     'success' => true,
+                     'message' => 'No sent friend requests found',
+                     'data' => [
+                         'requests' => [],
+                         'total_requests' => 0,
+                         'counts' => [
+                             'pending' => $pendingCount,
+                             'declined' => $declinedCount,
+                             'cancelled' => $cancelledCount,
+                             'total' => $pendingCount + $declinedCount + $cancelledCount
+                         ],
+                         'current_filter' => $statusFilter,
+                         'sorting' => [
+                             'sort_by' => $sortBy,
+                             'sort_order' => $sortOrder
+                         ],
+                         'pagination' => [
+                             'current_page' => $sentRequests->currentPage(),
+                             'last_page' => $sentRequests->lastPage(),
+                             'per_page' => $sentRequests->perPage(),
+                             'total' => $sentRequests->total(),
+                             'from' => $sentRequests->firstItem(),
+                             'to' => $sentRequests->lastItem(),
+                             'has_more_pages' => $sentRequests->hasMorePages()
+                         ]
+                     ]
+                 ], 200);
              }
 
              // Map requests data
@@ -737,10 +796,35 @@ class FriendController extends Controller
 
              if($sentRequests->isEmpty()) {
                  return response()->json([
-                     'status_code' => 404,
-                     'success' => false,
-                     'message' => 'No sent friend requests found matching your search'
-                 ], 404);
+                     'status_code' => 200,
+                     'success' => true,
+                     'message' => 'No sent friend requests found matching your search',
+                     'data' => [
+                         'requests' => [],
+                         'total_requests' => 0,
+                         'search_query' => $searchQuery,
+                         'counts' => [
+                             'pending' => $pendingCount,
+                             'declined' => $declinedCount,
+                             'cancelled' => $cancelledCount,
+                             'total' => $pendingCount + $declinedCount + $cancelledCount
+                         ],
+                         'current_filter' => $statusFilter,
+                         'sorting' => [
+                             'sort_by' => $sortBy,
+                             'sort_order' => $sortOrder
+                         ],
+                         'pagination' => [
+                             'current_page' => $sentRequests->currentPage(),
+                             'last_page' => $sentRequests->lastPage(),
+                             'per_page' => $sentRequests->perPage(),
+                             'total' => $sentRequests->total(),
+                             'from' => $sentRequests->firstItem(),
+                             'to' => $sentRequests->lastItem(),
+                             'has_more_pages' => $sentRequests->hasMorePages()
+                         ]
+                     ]
+                 ], 200);
              }
 
              // Map requests data
@@ -934,10 +1018,27 @@ class FriendController extends Controller
 
              if($pendingRequests->isEmpty()) {
                  return response()->json([
-                     'status_code' => 404,
-                     'success' => false,
-                     'message' => 'No pending friend requests found'
-                 ], 404);
+                     'status_code' => 200,
+                     'success' => true,
+                     'message' => 'No pending friend requests found',
+                     'data' => [
+                         'requests' => [],
+                         'total_requests' => 0,
+                         'sorting' => [
+                             'sort_by' => $sortBy,
+                             'sort_order' => $sortOrder
+                         ],
+                         'pagination' => [
+                             'current_page' => $pendingRequests->currentPage(),
+                             'last_page' => $pendingRequests->lastPage(),
+                             'per_page' => $pendingRequests->perPage(),
+                             'total' => $pendingRequests->total(),
+                             'from' => $pendingRequests->firstItem(),
+                             'to' => $pendingRequests->lastItem(),
+                             'has_more_pages' => $pendingRequests->hasMorePages()
+                         ]
+                     ]
+                 ], 200);
              }
 
              // Map requests data
@@ -1056,10 +1157,28 @@ class FriendController extends Controller
 
              if($pendingRequests->isEmpty()) {
                  return response()->json([
-                     'status_code' => 404,
-                     'success' => false,
-                     'message' => 'No pending friend requests found matching your search'
-                 ], 404);
+                     'status_code' => 200,
+                     'success' => true,
+                     'message' => 'No pending friend requests found matching your search',
+                     'data' => [
+                         'requests' => [],
+                         'total_requests' => 0,
+                         'search_query' => $searchQuery,
+                         'sorting' => [
+                             'sort_by' => $sortBy,
+                             'sort_order' => $sortOrder
+                         ],
+                         'pagination' => [
+                             'current_page' => $pendingRequests->currentPage(),
+                             'last_page' => $pendingRequests->lastPage(),
+                             'per_page' => $pendingRequests->perPage(),
+                             'total' => $pendingRequests->total(),
+                             'from' => $pendingRequests->firstItem(),
+                             'to' => $pendingRequests->lastItem(),
+                             'has_more_pages' => $pendingRequests->hasMorePages()
+                         ]
+                     ]
+                 ], 200);
              }
 
              // Map requests data
