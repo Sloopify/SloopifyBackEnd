@@ -13,28 +13,28 @@ class Story extends Model
 
     protected $fillable = [
         'user_id',
-        'content',
-        'text_properties',
-        'background_color',
         'privacy',
         'specific_friends',
         'friend_except',
-        'gif_url',
-        'is_video_muted',
-        'location_element',
+        'text_elements',
+        'background_color',
         'mentions_elements',
         'clock_element',
         'feeling_element',
         'temperature_element',
         'audio_element',
         'poll_element',
+        'location_element',
+        'drawing_elements',
+        'gif_element',
+        'is_video_muted',
         'expires_at',
         'status',
         'is_story_muted_notification'
     ];
 
     protected $casts = [
-        'text_properties' => 'array',
+        'text_elements' => 'array',
         'background_color' => 'array',
         'specific_friends' => 'array',
         'friend_except' => 'array',
@@ -45,6 +45,8 @@ class Story extends Model
         'temperature_element' => 'array',
         'audio_element' => 'array',
         'poll_element' => 'array',
+        'drawing_elements' => 'array',
+        'gif_element' => 'array',
         'expires_at' => 'datetime',
         'is_video_muted' => 'boolean',
         'is_story_muted_notification' => 'boolean'
@@ -58,7 +60,7 @@ class Story extends Model
 
     public function media()
     {
-        return $this->hasMany(StoryMedia::class)->orderBy('display_order');
+        return $this->hasMany(StoryMedia::class)->orderBy('order');
     }
 
     public function views()
@@ -161,22 +163,25 @@ class Story extends Model
             return null;
         }
 
-        $options = $this->poll_element['options'] ?? [];
+        $pollOptions = $this->poll_element['poll_options'] ?? [];
         $votes = $this->pollVotes()->get();
         $totalVotes = $votes->count();
 
         $results = [];
-        foreach ($options as $index => $option) {
-            $optionVotes = $votes->where('selected_options', 'like', '%"' . $index . '"%')->count();
+        foreach ($pollOptions as $pollOption) {
+            $optionId = $pollOption['option_id'];
+            $optionVotes = $votes->where('selected_options', 'like', '%"' . $optionId . '"%')->count();
             $results[] = [
-                'option' => $option,
+                'option_id' => $optionId,
+                'option_name' => $pollOption['option_name'],
                 'votes' => $optionVotes,
                 'percentage' => $totalVotes > 0 ? round(($optionVotes / $totalVotes) * 100, 1) : 0
             ];
         }
 
         return [
-            'options' => $results,
+            'question' => $this->poll_element['question'],
+            'poll_options' => $results,
             'total_votes' => $totalVotes
         ];
     }

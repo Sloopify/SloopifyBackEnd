@@ -21,9 +21,11 @@ return new class extends Migration
             $table->bigInteger('size');
             $table->string('path');
             $table->string('url');
-            $table->integer('display_order')->default(0);
-            $table->decimal('x_position', 8, 2)->default(0); // X position on story canvas
-            $table->decimal('y_position', 8, 2)->default(0); // Y position on story canvas
+            $table->integer('order')->default(1); // Display order
+            $table->decimal('rotate_angle', 8, 2)->default(0); // Rotation angle
+            $table->decimal('scale', 8, 2)->default(1.0); // Scale factor
+            $table->decimal('dx', 8, 2)->default(0); // X position offset
+            $table->decimal('dy', 8, 2)->default(0); // Y position offset
             $table->json('metadata')->nullable(); // dimensions, duration, etc
             $table->timestamps();
         });
