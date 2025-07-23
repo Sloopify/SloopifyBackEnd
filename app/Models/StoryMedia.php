@@ -18,16 +18,20 @@ class StoryMedia extends Model
         'size',
         'path',
         'url',
-        'display_order',
-        'x_position',
-        'y_position',
+        'order',
+        'rotate_angle',
+        'scale',
+        'dx',
+        'dy',
         'metadata'
     ];
 
     protected $casts = [
         'metadata' => 'array',
-        'x_position' => 'decimal:2',
-        'y_position' => 'decimal:2'
+        'rotate_angle' => 'decimal:2',
+        'scale' => 'decimal:2',
+        'dx' => 'decimal:2',
+        'dy' => 'decimal:2'
     ];
 
     public function story()

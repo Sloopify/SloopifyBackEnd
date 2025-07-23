@@ -46,28 +46,32 @@ class StoryController extends Controller
          return [
              'id' => $story->id,
              'user' => $this->mapUserDetails($story->user),
-             'content' => $story->content,
-             'text_properties' => $story->text_properties,
-             'background_color' => $story->background_color,
              'privacy' => $story->privacy,
-             'gif_url' => $story->gif_url,
-             'is_video_muted' => $story->is_video_muted,
-             'location_element' => $story->location_element,
+             'specific_friends' => $story->specific_friends,
+             'friend_except' => $story->friend_except,
+             'text_elements' => $story->text_elements,
+             'background_color' => $story->background_color,
              'mentions_elements' => $story->mentions_elements,
              'clock_element' => $story->clock_element,
              'feeling_element' => $story->feeling_element,
              'temperature_element' => $story->temperature_element,
              'audio_element' => $story->audio_element,
              'poll_element' => $story->poll_element,
+             'location_element' => $story->location_element,
+             'drawing_elements' => $story->drawing_elements,
+             'gif_element' => $story->gif_element,
+             'is_video_muted' => $story->is_video_muted,
              'is_story_muted_notification' => $story->is_story_muted_notification,
              'media' => $story->media->map(function ($media) {
                  return [
                      'id' => $media->id,
                      'type' => $media->type,
                      'url' => $media->full_url,
-                     'x_position' => $media->x_position,
-                     'y_position' => $media->y_position,
-                     'display_order' => $media->display_order,
+                     'order' => $media->order,
+                     'rotate_angle' => $media->rotate_angle,
+                     'scale' => $media->scale,
+                     'dx' => $media->dx,
+                     'dy' => $media->dy,
                      'metadata' => $media->metadata
                  ];
              }),
@@ -137,92 +141,177 @@ class StoryController extends Controller
         return round($size, 2) . ' ' . $units[$power];
     }
 
+    private function mapStoryPollVote($vote, $user = null)
+    {
+        return [
+            'id' => $vote->id,
+            'user' => $this->mapUserDetails($vote->user),
+            'selected_options' => $vote->selected_options,
+            'created_at' => $vote->created_at
+        ];
+    }
+
     public function createStory(Request $request)
     {
         try {
             $validatedData = $request->validate([
-                'content' => 'nullable|string|max:5000',
-                
-                // Text styling
-                'text_properties' => 'nullable|array',
-                'text_properties.color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
-                'text_properties.font_type' => 'nullable|string|max:50',
-                'text_properties.bold' => 'nullable|boolean',
-                'text_properties.italic' => 'nullable|boolean',
-                'text_properties.underline' => 'nullable|boolean',
-                'text_properties.alignment' => 'nullable|in:left,center,right',
-                
-                // Background colors
-                'background_color' => 'nullable|array|max:10',
-                'background_color.*' => 'string|regex:/^#[0-9A-Fa-f]{6}$/',
-                
-                // Privacy (without only_me)
+                // Privacy settings
                 'privacy' => 'required|in:public,friends,specific_friends,friend_except',
                 'specific_friends' => 'nullable|array',
                 'specific_friends.*' => 'exists:users,id',
                 'friend_except' => 'nullable|array',
                 'friend_except.*' => 'exists:users,id',
                 
-                // Media
+                // Text elements (array for stories without media, object for stories with media)
+                'text_elements' => 'nullable|array|max:20',
+                'text_elements.*.text_properties' => 'nullable|array',
+                'text_elements.*.text_properties.color' => 'nullable|string|max:7',
+                'text_elements.*.text_properties.font_type' => 'nullable|string|max:50',
+                'text_elements.*.text_properties.bold' => 'nullable|boolean',
+                'text_elements.*.text_properties.italic' => 'nullable|boolean',
+                'text_elements.*.text_properties.underline' => 'nullable|boolean',
+                'text_elements.*.text_properties.alignment' => 'nullable|in:left,center,right',
+                'text_elements.*.text' => 'required|string|max:5000',
+                'text_elements.*.x' => 'required|numeric',
+                'text_elements.*.y' => 'required|numeric',
+                'text_elements.*.size_x' => 'nullable|numeric',
+                'text_elements.*.size_h' => 'nullable|numeric',
+                'text_elements.*.rotation' => 'nullable|numeric',
+                'text_elements.*.scale' => 'nullable|numeric',
+                
+                // Single text element for stories with media
+                'text_element' => 'nullable|array',
+                'text_element.text_properties' => 'nullable|array',
+                'text_element.text_properties.color' => 'nullable|string|max:7',
+                'text_element.text_properties.font_type' => 'nullable|string|max:50',
+                'text_element.text_properties.bold' => 'nullable|boolean',
+                'text_element.text_properties.italic' => 'nullable|boolean',
+                'text_element.text_properties.underline' => 'nullable|boolean',
+                'text_element.text_properties.alignment' => 'nullable|in:left,center,right',
+                'text_element.text' => 'required_with:text_element|string|max:5000',
+                'text_element.x' => 'required_with:text_element|numeric',
+                'text_element.y' => 'required_with:text_element|numeric',
+                'text_element.size_x' => 'nullable|numeric',
+                'text_element.size_h' => 'nullable|numeric',
+                'text_element.rotation' => 'nullable|numeric',
+                'text_element.scale' => 'nullable|numeric',
+                
+                // Background colors
+                'background_color' => 'nullable|array|max:10',
+                'background_color.*' => 'string|regex:/^#[0-9A-Fa-f]{6}$/',
+                
+                // Media with new structure
                 'media' => 'nullable|array|max:10',
                 'media.*.file' => 'required|file|mimes:jpeg,png,gif,mp4,avi|max:51200',
-                'media.*.x_position' => 'nullable|numeric|min:0|max:100',
-                'media.*.y_position' => 'nullable|numeric|min:0|max:100',
-                'media.*.display_order' => 'nullable|integer|min:1',
+                'media.*.order' => 'nullable|integer|min:1',
+                'media.*.rotate_angle' => 'nullable|numeric',
+                'media.*.scale' => 'nullable|numeric',
+                'media.*.dx' => 'nullable|numeric',
+                'media.*.dy' => 'nullable|numeric',
                 
-                                // Story elements with positioning
-                'location_element' => 'nullable|array',
-                'location_element.id' => 'nullable|exists:user_places,id',
-                'location_element.x' => 'required_with:location_element|numeric|min:0|max:100',
-                'location_element.y' => 'required_with:location_element|numeric|min:0|max:100',
-                'location_element.theme' => 'nullable|in:theme_1,theme_2,theme_3,theme_4',
-                'location_element.size' => 'nullable|numeric|min:10|max:200',
-                
+                // Enhanced positioning elements
                 'mentions_elements' => 'nullable|array|max:10',
                 'mentions_elements.*.friend_id' => 'required|exists:users,id',
-                'mentions_elements.*.x' => 'required|numeric|min:0|max:100',
-                'mentions_elements.*.y' => 'required|numeric|min:0|max:100',
+                'mentions_elements.*.friend_name' => 'nullable|string|max:255',
+                'mentions_elements.*.x' => 'required|numeric',
+                'mentions_elements.*.y' => 'required|numeric',
                 'mentions_elements.*.theme' => 'nullable|in:theme_1,theme_2,theme_3,theme_4',
-                'mentions_elements.*.size' => 'nullable|numeric|min:10|max:200',
+                'mentions_elements.*.size_x' => 'nullable|numeric',
+                'mentions_elements.*.size_h' => 'nullable|numeric',
+                'mentions_elements.*.rotation' => 'nullable|numeric',
+                'mentions_elements.*.scale' => 'nullable|numeric',
                 
                 'clock_element' => 'nullable|array',
-                'clock_element.x' => 'required_with:clock_element|numeric|min:0|max:100',
-                'clock_element.y' => 'required_with:clock_element|numeric|min:0|max:100',
+                'clock_element.clock' => 'required_with:clock_element|string|max:20',
+                'clock_element.x' => 'required_with:clock_element|numeric',
+                'clock_element.y' => 'required_with:clock_element|numeric',
                 'clock_element.theme' => 'nullable|in:theme_1,theme_2,theme_3,theme_4',
-                'clock_element.size' => 'nullable|numeric|min:10|max:200',
+                'clock_element.size_x' => 'nullable|numeric',
+                'clock_element.size_h' => 'nullable|numeric',
+                'clock_element.rotation' => 'nullable|numeric',
+                'clock_element.scale' => 'nullable|numeric',
                 
                 'feeling_element' => 'nullable|array',
                 'feeling_element.feeling_id' => 'required_with:feeling_element|exists:post_feelings,id',
-                'feeling_element.x' => 'required_with:feeling_element|numeric|min:0|max:100',
-                'feeling_element.y' => 'required_with:feeling_element|numeric|min:0|max:100',
+                'feeling_element.feeling_name' => 'nullable|string|max:255',
+                'feeling_element.x' => 'required_with:feeling_element|numeric',
+                'feeling_element.y' => 'required_with:feeling_element|numeric',
                 'feeling_element.theme' => 'nullable|in:theme_1,theme_2,theme_3,theme_4',
-                'feeling_element.size' => 'nullable|numeric|min:10|max:200',
+                'feeling_element.size_x' => 'nullable|numeric',
+                'feeling_element.size_h' => 'nullable|numeric',
+                'feeling_element.rotation' => 'nullable|numeric',
+                'feeling_element.scale' => 'nullable|numeric',
                 
                 'temperature_element' => 'nullable|array',
-                'temperature_element.x' => 'required_with:temperature_element|numeric|min:0|max:100',
-                'temperature_element.y' => 'required_with:temperature_element|numeric|min:0|max:100',
                 'temperature_element.value' => 'nullable|numeric|min:-50|max:60',
+                'temperature_element.weather_code' => 'nullable|string|max:10',
+                'temperature_element.code' => 'nullable|numeric',
+                'temperature_element.isDay' => 'nullable|boolean',
+                'temperature_element.x' => 'required_with:temperature_element|numeric',
+                'temperature_element.y' => 'required_with:temperature_element|numeric',
                 'temperature_element.theme' => 'nullable|in:theme_1,theme_2,theme_3,theme_4',
-                'temperature_element.size' => 'nullable|numeric|min:10|max:200',
+                'temperature_element.size_x' => 'nullable|numeric',
+                'temperature_element.size_h' => 'nullable|numeric',
+                'temperature_element.rotation' => 'nullable|numeric',
+                'temperature_element.scale' => 'nullable|numeric',
                 
                 'audio_element' => 'nullable|array',
                 'audio_element.audio_id' => 'nullable|exists:story_audio,id',
-                'audio_element.x' => 'required_with:audio_element|numeric|min:0|max:100',
-                'audio_element.y' => 'required_with:audio_element|numeric|min:0|max:100',
+                'audio_element.audio_name' => 'nullable|string|max:255',
+                'audio_element.audio_image' => 'nullable|url|max:2048',
+                'audio_element.audio_url' => 'nullable|url|max:2048',
+                'audio_element.x' => 'required_with:audio_element|numeric',
+                'audio_element.y' => 'required_with:audio_element|numeric',
                 'audio_element.theme' => 'nullable|in:theme_1,theme_2,theme_3,theme_4',
-                'audio_element.size' => 'nullable|numeric|min:10|max:200',
+                'audio_element.size_x' => 'nullable|numeric',
+                'audio_element.size_h' => 'nullable|numeric',
+                'audio_element.rotation' => 'nullable|numeric',
+                'audio_element.scale' => 'nullable|numeric',
                 
                 'poll_element' => 'nullable|array',
-                'poll_element.x' => 'required_with:poll_element|numeric|min:0|max:100',
-                'poll_element.y' => 'required_with:poll_element|numeric|min:0|max:100',
                 'poll_element.question' => 'required_with:poll_element|string|max:500',
-                'poll_element.options' => 'required_with:poll_element|array|min:2|max:5',
-                'poll_element.options.*' => 'string|max:255',
+                'poll_element.poll_options' => 'required_with:poll_element|array|min:2|max:5',
+                'poll_element.poll_options.*.option_id' => 'required|integer',
+                'poll_element.poll_options.*.option_name' => 'required|string|max:255',
+                'poll_element.poll_options.*.votes' => 'nullable|integer|min:0',
+                'poll_element.x' => 'required_with:poll_element|numeric',
+                'poll_element.y' => 'required_with:poll_element|numeric',
                 'poll_element.theme' => 'nullable|in:theme_1,theme_2,theme_3,theme_4',
-                'poll_element.size' => 'nullable|numeric|min:10|max:200',
+                'poll_element.size_x' => 'nullable|numeric',
+                'poll_element.size_h' => 'nullable|numeric',
+                'poll_element.rotation' => 'nullable|numeric',
+                'poll_element.scale' => 'nullable|numeric',
+                
+                'location_element' => 'nullable|array',
+                'location_element.id' => 'nullable|exists:user_places,id',
+                'location_element.country_name' => 'nullable|string|max:255',
+                'location_element.city_name' => 'nullable|string|max:255',
+                'location_element.x' => 'required_with:location_element|numeric',
+                'location_element.y' => 'required_with:location_element|numeric',
+                'location_element.theme' => 'nullable|in:theme_1,theme_2,theme_3,theme_4',
+                'location_element.size_x' => 'nullable|numeric',
+                'location_element.size_h' => 'nullable|numeric',
+                'location_element.rotation' => 'nullable|numeric',
+                'location_element.scale' => 'nullable|numeric',
+                
+                // New elements
+                'drawing_elements' => 'nullable|array|max:20',
+                'drawing_elements.*.points' => 'required|array|min:2',
+                'drawing_elements.*.points.*.x' => 'required|numeric',
+                'drawing_elements.*.points.*.y' => 'required|numeric',
+                'drawing_elements.*.stroke_width' => 'required|numeric|min:1|max:20',
+                'drawing_elements.*.stroke_color' => 'required|string|regex:/^#[0-9A-Fa-f]{6}$/',
+                
+                'gif_element' => 'nullable|array',
+                'gif_element.gif_url' => 'required_with:gif_element|url|max:2048',
+                'gif_element.x' => 'required_with:gif_element|numeric',
+                'gif_element.y' => 'required_with:gif_element|numeric',
+                'gif_element.size_x' => 'nullable|numeric',
+                'gif_element.size_h' => 'nullable|numeric',
+                'gif_element.rotation' => 'nullable|numeric',
+                'gif_element.scale' => 'nullable|numeric',
                 
                 // Other options
-                'gif_url' => 'nullable|url|max:2048',
                 'is_video_muted' => 'nullable|boolean'
             ]);
 
@@ -282,24 +371,32 @@ class StoryController extends Controller
 
             DB::beginTransaction();
 
+            // Handle text elements (convert single text_element to array for consistency)
+            $textElements = null;
+            if (!empty($validatedData['text_elements'])) {
+                $textElements = $validatedData['text_elements'];
+            } elseif (!empty($validatedData['text_element'])) {
+                $textElements = [$validatedData['text_element']];
+            }
+
             // Create story
             $story = Story::create([
                 'user_id' => $user->id,
-                'content' => $validatedData['content'] ?? null,
-                'text_properties' => $validatedData['text_properties'] ?? null,
-                'background_color' => $validatedData['background_color'] ?? null,
                 'privacy' => $validatedData['privacy'],
                 'specific_friends' => $validatedData['privacy'] === 'specific_friends' ? ($validatedData['specific_friends'] ?? null) : null,
                 'friend_except' => $validatedData['privacy'] === 'friend_except' ? ($validatedData['friend_except'] ?? null) : null,
-                'gif_url' => $validatedData['gif_url'] ?? null,
-                'is_video_muted' => $validatedData['is_video_muted'] ?? false,
-                'location_element' => $validatedData['location_element'] ?? null,
+                'text_elements' => $textElements,
+                'background_color' => $validatedData['background_color'] ?? null,
                 'mentions_elements' => $validatedData['mentions_elements'] ?? null,
                 'clock_element' => $validatedData['clock_element'] ?? null,
                 'feeling_element' => $validatedData['feeling_element'] ?? null,
                 'temperature_element' => $validatedData['temperature_element'] ?? null,
                 'audio_element' => $validatedData['audio_element'] ?? null,
                 'poll_element' => $validatedData['poll_element'] ?? null,
+                'location_element' => $validatedData['location_element'] ?? null,
+                'drawing_elements' => $validatedData['drawing_elements'] ?? null,
+                'gif_element' => $validatedData['gif_element'] ?? null,
+                'is_video_muted' => $validatedData['is_video_muted'] ?? false,
                 'expires_at' => Carbon::now()->addHours(24),
                 'status' => 'active'
             ]);
@@ -381,9 +478,11 @@ class StoryController extends Controller
                 'size' => $file->getSize(),
                 'path' => $path,
                 'url' => Storage::url($path),
-                'display_order' => $mediaItem['display_order'] ?? ($index + 1),
-                'x_position' => $mediaItem['x_position'] ?? 0,
-                'y_position' => $mediaItem['y_position'] ?? 0,
+                'order' => $mediaItem['order'] ?? ($index + 1),
+                'rotate_angle' => $mediaItem['rotate_angle'] ?? 0.0,
+                'scale' => $mediaItem['scale'] ?? 1.0,
+                'dx' => $mediaItem['dx'] ?? 0.0,
+                'dy' => $mediaItem['dy'] ?? 0.0,
                 'metadata' => $this->extractMediaMetadata($file)
             ]);
         }
@@ -1052,14 +1151,6 @@ class StoryController extends Controller
          }
      }
     
-
-
-
-
-
-     
-
-
     // public function getStoryReplies(Request $request)
     // {
     //     try {
@@ -1102,11 +1193,6 @@ class StoryController extends Controller
     //         ], 404);
     //     }
     // }
-
-
-
-
-
 
 
     public function getStories(Request $request)
@@ -1264,9 +1350,10 @@ class StoryController extends Controller
             }
 
             // Validate selected options
-            $maxOption = count($story->poll_element['options']) - 1;
-            foreach ($validatedData['selected_options'] as $option) {
-                if ($option > $maxOption) {
+            $pollOptions = $story->poll_element['poll_options'] ?? [];
+            $validOptionIds = array_column($pollOptions, 'option_id');
+            foreach ($validatedData['selected_options'] as $optionId) {
+                if (!in_array($optionId, $validOptionIds)) {
                     return response()->json([
                         'status_code' => 400,
                         'success' => false,
@@ -1451,7 +1538,4 @@ class StoryController extends Controller
         }
     }
 
-   
-
-   
 } 
