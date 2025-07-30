@@ -180,16 +180,11 @@ Route::group(['prefix' => 'api/v1'], function () {
             Route::post('/search-story-poll-results', 'searchStoryPollResults');
 
             Route::post('/get-story-by-id', 'getStoryById');
-
-           
-
-
             
-         
+            Route::post('/get-stories', 'getStories');
 
-            // Story interactions
-           
-            Route::get('/get-stories', 'getStories');
+            Route::post('/view-story', 'viewStory');
+
 
       
             Route::post('/reply-to-story', 'replyToStory');
