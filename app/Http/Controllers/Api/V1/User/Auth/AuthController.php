@@ -52,7 +52,7 @@ class AuthController extends Controller
             'gender' => $user->gender,
             'status' => $user->status,
             'is_blocked' => (bool)$user->is_blocked,
-            'age' => $user->birthday ? now()->diffInYears($user->birthday) : null,
+            'age' => $user->birthday ? \Carbon\Carbon::parse($user->birthday)->age : null,
             'birthday' => $user->birthday,
             'bio' => $user->bio,
             'country' => $user->country,

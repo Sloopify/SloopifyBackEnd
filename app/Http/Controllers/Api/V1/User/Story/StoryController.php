@@ -21,6 +21,7 @@ use App\Models\Friendship;
 use Carbon\Carbon;
 use Exception;
 use App\Http\Controllers\Api\V1\User\Post\PostController;
+use App\Http\Controllers\Api\V1\User\Auth\AuthController;
 
 class StoryController extends Controller
 {
@@ -45,7 +46,7 @@ class StoryController extends Controller
          
          return [
              'id' => $story->id,
-             'user' => $this->mapUserDetails($story->user),
+             'user' => app(AuthController::class)->mapUserDetails($story->user),
              'privacy' => $story->privacy,
              'specific_friends' => $story->specific_friends,
              'friend_except' => $story->friend_except,
@@ -87,16 +88,16 @@ class StoryController extends Controller
     }
 
  
-    private function mapUserDetails($user)
-    {
-         return [
-             'id' => $user->id,
-             'first_name' => $user->first_name,
-             'last_name' => $user->last_name,
-             'email' => $user->email,
-             'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : null)
-         ];
-    }
+    // private function mapUserDetails($user)
+    // {
+    //      return [
+    //          'id' => $user->id,
+    //          'first_name' => $user->first_name,
+    //          'last_name' => $user->last_name,
+    //          'email' => $user->email,
+    //          'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : null)
+    //      ];
+    // }
 
     private function mapStoryAudio($audio, $user = null)
     {
@@ -145,7 +146,7 @@ class StoryController extends Controller
     {
         return [
             'id' => $vote->id,
-            'user' => $this->mapUserDetails($vote->user),
+            'user' => app(AuthController::class)->mapUserDetails($vote->user),
             'selected_options' => $vote->selected_options,
             'created_at' => $vote->created_at
         ];
@@ -768,7 +769,7 @@ class StoryController extends Controller
                 });
 
                 return [
-                    'user' => $this->mapUserDetails($view->viewer),
+                    'user' => app(AuthController::class)->mapUserDetails($view->viewer),
                     'viewed_at' => $view->viewed_at,
                     'replies' => $mappedReplies
                 ];
@@ -852,7 +853,7 @@ class StoryController extends Controller
                 });
 
                 return [
-                    'user' => $this->mapUserDetails($view->viewer),
+                    'user' => app(AuthController::class)->mapUserDetails($view->viewer),
                     'viewed_at' => $view->viewed_at,
                     'replies' => $mappedReplies
                 ];
@@ -1086,49 +1087,9 @@ class StoryController extends Controller
              $validatedData = $request->validate([
                  'story_id' => 'required|integer|exists:stories,id',
              ]);
+
              $user = Auth::guard('user')->user();
              
-             // Debug: Check if story exists without any scopes
-             $storyExists = Story::find($validatedData['story_id']);
-             if (!$storyExists) {
-                 return response()->json([
-                     'status_code' => 404,
-                     'success' => false,
-                     'message' => 'Story does not exist in database'
-                 ], 404);
-             }
-             
-             // Debug: Check if story passes active scope
-             $activeStory = Story::active()->find($validatedData['story_id']);
-             if (!$activeStory) {
-                 return response()->json([
-                     'status_code' => 404,
-                     'success' => false,
-                     'message' => 'Story is not active or has expired',
-                     'debug' => [
-                         'status' => $storyExists->status,
-                         'expires_at' => $storyExists->expires_at,
-                         'current_time' => now()
-                     ]
-                 ], 404);
-             }
-             
-             // Debug: Check if story passes visibleTo scope
-             $visibleStory = Story::active()->visibleTo($user->id)->find($validatedData['story_id']);
-             if (!$visibleStory) {
-                 return response()->json([
-                     'status_code' => 404,
-                     'success' => false,
-                     'message' => 'Story is not visible to you',
-                     'debug' => [
-                         'story_privacy' => $storyExists->privacy,
-                         'story_owner_id' => $storyExists->user_id,
-                         'current_user_id' => $user->id,
-                         'is_own_story' => $storyExists->user_id == $user->id
-                     ]
-                 ], 404);
-             }
-
              $story = Story::with(['user', 'media', 'views', 'replies', 'pollVotes'])
                  ->active()
                  ->visibleTo($user->id)
@@ -1140,17 +1101,143 @@ class StoryController extends Controller
                  'message' => 'Story retrieved successfully',
                  'data' => $this->mapStory($story, $user)
              ], 200);
-         }
-         catch (Exception $e) {
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
              return response()->json([
                  'status_code' => 404,
                  'success' => false,
-                 'message' => 'Story not found',
+                 'message' => 'Story not found or not accessible',
                  'error' => $e->getMessage()
              ], 404);
          }
      }
     
+     public function getStories(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'page' => 'nullable|integer|min:1',
+                 'per_page' => 'nullable|integer|min:1|max:100'
+             ]);
+ 
+             $user = Auth::guard('user')->user();
+             $perPage = $validatedData['per_page'] ?? 20;
+ 
+             $stories = Story::with(['user', 'media', 'views'])
+                 ->active()
+                 ->visibleTo($user->id)
+                 ->orderBy('created_at', 'desc')
+                 ->paginate($perPage);
+ 
+             $mappedStories = $stories->getCollection()->map(function ($story) use ($user) {
+                 return $this->mapStory($story, $user);
+             });
+ 
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Stories retrieved successfully',
+                 'data' => $mappedStories,
+                 'pagination' => [
+                     'current_page' => $stories->currentPage(),
+                     'last_page' => $stories->lastPage(),
+                     'per_page' => $stories->perPage(),
+                     'total' => $stories->total(),
+                     'from' => $stories->firstItem(),
+                     'to' => $stories->lastItem(),
+                     'has_more_pages' => $stories->hasMorePages()
+                 ]
+             ], 200);
+ 
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to retrieve stories',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
+     public function viewStory(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'story_id' => 'required|integer|exists:stories,id',
+             ]);
+
+             $user = Auth::guard('user')->user();
+             
+             $story = Story::with(['user', 'media', 'views', 'replies'])
+                 ->active()
+                 ->visibleTo($user->id)
+                 ->findOrFail($validatedData['story_id']);
+
+             // Check if user is trying to view their own story
+             if ($story->user_id == $user->id) {
+                 return response()->json([
+                     'status_code' => 400,
+                     'success' => false,
+                     'message' => 'You cannot view your own story'
+                 ], 400);
+             }
+
+             DB::beginTransaction();
+
+             // Record view if not already viewed
+             if (!$story->hasBeenViewedBy($user->id)) {
+                 StoryView::create([
+                     'story_id' => $story->id,
+                     'viewer_id' => $user->id,
+                     'viewed_at' => now()
+                 ]);
+             }
+
+             DB::commit();
+
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Story viewed successfully',
+                 'data' => $this->mapStory($story, $user)
+             ], 200);
+
+         } catch (ValidationException $e) {
+             DB::rollBack();
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             DB::rollBack();
+             return response()->json([
+                 'status_code' => 404,
+                 'success' => false,
+                 'message' => 'Story not found or not accessible',
+                 'error' => $e->getMessage()
+             ], 404);
+         }
+     }
+
+
+
+
     // public function getStoryReplies(Request $request)
     // {
     //     try {
@@ -1195,86 +1282,9 @@ class StoryController extends Controller
     // }
 
 
-    public function getStories(Request $request)
-    {
-        try {
-            $validatedData = $request->validate([
-                'page' => 'nullable|integer|min:1',
-                'per_page' => 'nullable|integer|min:1|max:100'
-            ]);
+   
 
-            $user = Auth::guard('user')->user();
-            $perPage = $validatedData['per_page'] ?? 20;
-
-            $stories = Story::with(['user', 'media', 'views'])
-                ->active()
-                ->visibleTo($user->id)
-                ->orderBy('created_at', 'desc')
-                ->paginate($perPage);
-
-            $mappedStories = $stories->getCollection()->map(function ($story) use ($user) {
-                return $this->mapStory($story, $user);
-            });
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Stories retrieved successfully',
-                'data' => $mappedStories,
-                'pagination' => [
-                    'current_page' => $stories->currentPage(),
-                    'last_page' => $stories->lastPage(),
-                    'per_page' => $stories->perPage(),
-                    'total' => $stories->total(),
-                    'has_more_pages' => $stories->hasMorePages()
-                ]
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to retrieve stories',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function viewStory($storyId)
-    {
-        try {
-            $user = Auth::guard('user')->user();
-            $story = Story::with(['user', 'media', 'views', 'replies'])
-                ->active()
-                ->visibleTo($user->id)
-                ->findOrFail($storyId);
-
-            // Record view if not already viewed
-            if (!$story->hasBeenViewedBy($user->id)) {
-                StoryView::create([
-                    'story_id' => $story->id,
-                    'viewer_id' => $user->id,
-                    'viewed_at' => now()
-                ]);
-            }
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Story retrieved successfully',
-                'data' => $this->mapStory($story, $user)
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 404,
-                'success' => false,
-                'message' => 'Story not found',
-                'error' => $e->getMessage()
-            ], 404);
-        }
-    }
-
+ 
 
     public function replyToStory(Request $request, $storyId)
     {
@@ -1315,7 +1325,7 @@ class StoryController extends Controller
                     'reply_media_url' => $reply->reply_media_url,
                     'reply_type' => $reply->reply_type,
                     'emoji' => $reply->emoji,
-                    'user' => $this->mapUserDetails($reply->user),
+                    'user' => app(AuthController::class)->mapUserDetails($reply->user),
                     'created_at' => $reply->created_at
                 ]
             ], 200);
@@ -1389,7 +1399,6 @@ class StoryController extends Controller
             ], 500);
         }
     }
-
   
     public function muteStoryNotifications(Request $request)
     {
