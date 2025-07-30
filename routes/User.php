@@ -185,6 +185,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::post('/view-story', 'viewStory');
 
+            Route::post('/view-my-story-by-id', 'viewMyStoryById');
+
 
       
             Route::post('/reply-to-story', 'replyToStory');

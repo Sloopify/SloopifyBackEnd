@@ -1235,6 +1235,44 @@ class StoryController extends Controller
          }
      }
 
+    public function viewMyStoryById(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'required|integer|exists:stories,id',
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            $story = Story::with(['user', 'media', 'views', 'replies', 'pollVotes'])
+                ->where('user_id', $user->id)
+                ->active()
+                ->findOrFail($validatedData['story_id']);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'My story retrieved successfully',
+                'data' => $this->mapStory($story, $user)
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'Story not found, expired, or you do not have permission to view it',
+                'error' => $e->getMessage()
+            ], 404);
+        }
+    }
+
 
 
 
