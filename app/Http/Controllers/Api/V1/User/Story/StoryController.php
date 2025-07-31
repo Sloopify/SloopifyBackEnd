@@ -22,6 +22,7 @@ use Carbon\Carbon;
 use Exception;
 use App\Http\Controllers\Api\V1\User\Post\PostController;
 use App\Http\Controllers\Api\V1\User\Auth\AuthController;
+use App\Models\StoryNotificationSetting;
 
 class StoryController extends Controller
 {
@@ -1273,7 +1274,143 @@ class StoryController extends Controller
         }
     }
 
+    public function muteStoryNotifications(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'nullable|integer|exists:stories,id',
+                'muted_user_id' => 'nullable|integer|exists:users,id',
+                'mute_replies' => 'nullable|boolean',
+                'mute_poll_votes' => 'nullable|boolean',
+                'mute_all' => 'nullable|boolean',
+                'mute_story_notifications' => 'nullable|boolean'
+            ]);
 
+            $user = Auth::guard('user')->user();
+
+            // Check if at least one of story_id or muted_user_id is provided
+            if (!isset($validatedData['story_id']) && !isset($validatedData['muted_user_id'])) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Either story_id or muted_user_id must be provided'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // Option 1: Mute notifications from specific friend for all your stories
+            if (isset($validatedData['muted_user_id']) && !isset($validatedData['story_id'])) {
+                // Check if users are friends
+                if (!$user->isFriendsWith($validatedData['muted_user_id'])) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'You can only mute notifications from friends'
+                    ], 422);
+                }
+
+                // Check if user is trying to mute themselves
+                if ($user->id == $validatedData['muted_user_id']) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'You cannot mute notifications from yourself'
+                    ], 422);
+                }
+
+                StoryNotificationSetting::updateOrCreate(
+                    [
+                        'story_owner_id' => $user->id,
+                        'muted_user_id' => $validatedData['muted_user_id'],
+                        'story_id' => null
+                    ],
+                    [
+                        'mute_replies' => $validatedData['mute_replies'] ?? false,
+                        'mute_poll_votes' => $validatedData['mute_poll_votes'] ?? false,
+                        'mute_all' => $validatedData['mute_all'] ?? false,
+                        'mute_story_notifications' => false
+                    ]
+                );
+            }
+
+            // Option 2: Mute all notifications for a specific story
+            if (isset($validatedData['story_id']) && !isset($validatedData['muted_user_id'])) {
+                // Verify the story belongs to the user
+                $story = Story::where('user_id', $user->id)
+                    ->findOrFail($validatedData['story_id']);
+
+                StoryNotificationSetting::updateOrCreate(
+                    [
+                        'story_owner_id' => $user->id,
+                        'story_id' => $validatedData['story_id'],
+                        'muted_user_id' => null
+                    ],
+                    [
+                        'mute_story_notifications' => $validatedData['mute_story_notifications'] ?? true,
+                        'mute_replies' => false,
+                        'mute_poll_votes' => false,
+                        'mute_all' => false
+                    ]
+                );
+            }
+
+            // Option 3: Mute notifications from specific friend for specific story
+            if (isset($validatedData['story_id']) && isset($validatedData['muted_user_id'])) {
+                // Check if users are friends
+                if (!$user->isFriendsWith($validatedData['muted_user_id'])) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'You can only mute notifications from friends'
+                    ], 422);
+                }
+
+                // Verify the story belongs to the user
+                $story = Story::where('user_id', $user->id)
+                    ->findOrFail($validatedData['story_id']);
+
+                StoryNotificationSetting::updateOrCreate(
+                    [
+                        'story_owner_id' => $user->id,
+                        'story_id' => $validatedData['story_id'],
+                        'muted_user_id' => $validatedData['muted_user_id']
+                    ],
+                    [
+                        'mute_replies' => $validatedData['mute_replies'] ?? false,
+                        'mute_poll_votes' => $validatedData['mute_poll_votes'] ?? false,
+                        'mute_all' => $validatedData['mute_all'] ?? false,
+                        'mute_story_notifications' => $validatedData['mute_story_notifications'] ?? false
+                    ]
+                );
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Story notification settings updated successfully'
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update notification settings',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
     // public function getStoryReplies(Request $request)
@@ -1321,8 +1458,6 @@ class StoryController extends Controller
 
 
    
-
- 
 
     public function replyToStory(Request $request, $storyId)
     {
@@ -1438,55 +1573,6 @@ class StoryController extends Controller
         }
     }
   
-    public function muteStoryNotifications(Request $request)
-    {
-        try {
-            $validatedData = $request->validate([
-                'muted_user_id' => 'required|exists:users,id',
-                'mute_replies' => 'nullable|boolean',
-                'mute_poll_votes' => 'nullable|boolean',
-                'mute_all' => 'nullable|boolean'
-            ]);
-
-            $user = Auth::guard('user')->user();
-
-            // Check if users are friends
-            if (!$user->isFriendsWith($validatedData['muted_user_id'])) {
-                return response()->json([
-                    'status_code' => 422,
-                    'success' => false,
-                    'message' => 'You can only mute notifications from friends'
-                ], 422);
-            }
-
-            DB::table('story_notification_settings')->updateOrInsert(
-                [
-                    'story_owner_id' => $user->id,
-                    'muted_user_id' => $validatedData['muted_user_id']
-                ],
-                [
-                    'mute_replies' => $validatedData['mute_replies'] ?? false,
-                    'mute_poll_votes' => $validatedData['mute_poll_votes'] ?? false,
-                    'mute_all' => $validatedData['mute_all'] ?? false,
-                    'updated_at' => now()
-                ]
-            );
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Story notification settings updated successfully'
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to update notification settings',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
 
     public function hideStory(Request $request)
     {
