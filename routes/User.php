@@ -189,18 +189,18 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::post('/mute-story-notifications', 'muteStoryNotifications');
 
-      
+            Route::post('/vote-story-poll', 'voteStoryPoll');
 
 
 
 
 
-            
+
             Route::post('/reply-to-story', 'replyToStory');
 
             Route::get('/get-story-replies', 'getStoryReplies');
             
-            Route::post('/vote-story-poll', 'voteStoryPoll');
+          
 
             Route::post('/hide-story', 'hideStory');
 

@@ -1412,6 +1412,85 @@ class StoryController extends Controller
         }
     }
 
+    public function voteStoryPoll(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'required|integer|exists:stories,id',
+                'selected_options' => 'required|array|min:1|max:5',
+                'selected_options.*' => 'integer|min:0'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $story = Story::active()->visibleTo($user->id)->findOrFail($validatedData['story_id']);
+
+            if (!$story->poll_element) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'This story does not have a poll'
+                ], 400);
+            }
+
+            // Validate selected options
+            $pollOptions = $story->poll_element['poll_options'] ?? [];
+            $validOptionIds = array_column($pollOptions, 'option_id');
+            
+            foreach ($validatedData['selected_options'] as $optionId) {
+                if (!in_array($optionId, $validOptionIds)) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Invalid poll option selected',
+                        'errors' => ['selected_options' => ['One or more selected options are invalid']]
+                    ], 422);
+                }
+            }
+
+            DB::beginTransaction();
+
+            // Create or update vote
+            StoryPollVote::updateOrCreate(
+                [
+                    'story_id' => $story->id,
+                    'user_id' => $user->id
+                ],
+                [
+                    'selected_options' => $validatedData['selected_options']
+                ]
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Vote recorded successfully',
+                'data' => [
+                    'results' => $story->poll_results,
+                    'selected_options' => $validatedData['selected_options']
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to record vote',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
     // public function getStoryReplies(Request $request)
     // {
@@ -1513,65 +1592,7 @@ class StoryController extends Controller
         }
     }
 
-    public function voteStoryPoll(Request $request, $storyId)
-    {
-        try {
-            $validatedData = $request->validate([
-                'selected_options' => 'required|array|min:1|max:5',
-                'selected_options.*' => 'integer|min:0'
-            ]);
-
-            $user = Auth::guard('user')->user();
-            $story = Story::active()->visibleTo($user->id)->findOrFail($storyId);
-
-            if (!$story->poll_element) {
-                return response()->json([
-                    'status_code' => 400,
-                    'success' => false,
-                    'message' => 'This story does not have a poll'
-                ], 400);
-            }
-
-            // Validate selected options
-            $pollOptions = $story->poll_element['poll_options'] ?? [];
-            $validOptionIds = array_column($pollOptions, 'option_id');
-            foreach ($validatedData['selected_options'] as $optionId) {
-                if (!in_array($optionId, $validOptionIds)) {
-                    return response()->json([
-                        'status_code' => 400,
-                        'success' => false,
-                        'message' => 'Invalid poll option selected'
-                    ], 400);
-                }
-            }
-
-            // Create or update vote
-            StoryPollVote::updateOrCreate(
-                [
-                    'story_id' => $story->id,
-                    'user_id' => $user->id
-                ],
-                [
-                    'selected_options' => $validatedData['selected_options']
-                ]
-            );
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Vote recorded successfully',
-                'data' => ['results' => $story->poll_results]
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to record vote',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
+   
   
 
     public function hideStory(Request $request)
