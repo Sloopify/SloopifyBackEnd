@@ -187,19 +187,20 @@ Route::group(['prefix' => 'api/v1'], function () {
 
             Route::post('/view-my-story-by-id', 'viewMyStoryById');
 
+            Route::post('/mute-story-notifications', 'muteStoryNotifications');
 
       
+
+
+
+
+
+            
             Route::post('/reply-to-story', 'replyToStory');
 
             Route::get('/get-story-replies', 'getStoryReplies');
             
-            // Story polls
             Route::post('/vote-story-poll', 'voteStoryPoll');
-
-        
-            
-            // Story privacy and settings
-            Route::post('/mute-story-notifications', 'muteStoryNotifications');
 
             Route::post('/hide-story', 'hideStory');
 

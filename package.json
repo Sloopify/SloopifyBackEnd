@@ -1,19 +1,16 @@
 {
-    "private": true,
-    "type": "module",
-    "scripts": {
-        "build": "vite build",
-        "dev": "vite"
-    },
-    "devDependencies": {
-        "@tailwindcss/forms": "^0.5.2",
-        "alpinejs": "^3.4.2",
-        "autoprefixer": "^10.4.2",
-        "axios": "^1.7.4",
-        "concurrently": "^9.0.1",
-        "laravel-vite-plugin": "^1.2.0",
-        "postcss": "^8.4.31",
-        "tailwindcss": "^3.1.0",
-        "vite": "^6.0.11"
-    }
+  "name": "mute-story-notifications-docs",
+  "version": "1.0.0",
+  "description": "PDF documentation generator for muteStoryNotifications function",
+  "main": "generate_pdf_documentation.js",
+  "scripts": {
+    "generate-pdf": "node generate_pdf_documentation.js"
+  },
+  "dependencies": {
+    "puppeteer": "^21.0.0",
+    "marked": "^9.0.0"
+  },
+  "keywords": ["documentation", "pdf", "api"],
+  "author": "Development Team",
+  "license": "MIT"
 }
