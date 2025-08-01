@@ -1701,24 +1701,49 @@ class StoryController extends Controller
         }
     }
 
-
-   
-
-
-  
-
-    
-
     public function unhideStory(Request $request)
     {
         try {
             $validatedData = $request->validate([
-                'story_owner_id' => 'nullable|exists:users,id',
-                'specific_story_id' => 'nullable|exists:stories,id',
+                'story_owner_id' => 'nullable|integer|exists:users,id',
+                'specific_story_id' => 'nullable|integer|exists:stories,id',
                 'hide_type' => 'required|in:permanent,30_days,specific_story'
             ]);
 
             $user = Auth::guard('user')->user();
+
+            // Validate required parameters based on hide type
+            if ($validatedData['hide_type'] === 'specific_story' && empty($validatedData['specific_story_id'])) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Specific story ID is required for specific story hide type',
+                    'errors' => ['specific_story_id' => ['Specific story ID is required for specific story hide type']]
+                ], 422);
+            }
+
+            if ($validatedData['hide_type'] !== 'specific_story' && empty($validatedData['story_owner_id'])) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Story owner ID is required for permanent or 30 days hide types',
+                    'errors' => ['story_owner_id' => ['Story owner ID is required for permanent or 30 days hide types']]
+                ], 422);
+            }
+
+            // Validate story exists for specific story hide
+            if ($validatedData['hide_type'] === 'specific_story' && !empty($validatedData['specific_story_id'])) {
+                $story = Story::find($validatedData['specific_story_id']);
+                if (!$story) {
+                    return response()->json([
+                        'status_code' => 404,
+                        'success' => false,
+                        'message' => 'Story not found'
+                    ], 404);
+                }
+            }
+
+            DB::beginTransaction();
 
             $query = DB::table('story_hide_settings')
                 ->where('user_id', $user->id)
@@ -1730,7 +1755,26 @@ class StoryController extends Controller
                 $query->where('story_owner_id', $validatedData['story_owner_id']);
             }
 
-            $query->delete();
+            // Check if hide setting exists before deleting
+            if (!$query->exists()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No hide setting found to remove'
+                ], 404);
+            }
+
+            $deletedCount = $query->delete();
+
+            if ($deletedCount === 0) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No hide setting found to remove'
+                ], 404);
+            }
+
+            DB::commit();
 
             return response()->json([
                 'status_code' => 200,
@@ -1738,7 +1782,16 @@ class StoryController extends Controller
                 'message' => 'Story unhidden successfully'
             ], 200);
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status_code' => 500,
                 'success' => false,

@@ -195,10 +195,6 @@ Route::group(['prefix' => 'api/v1'], function () {
             
             Route::post('/hide-story', 'hideStory');
 
-
-
-
-            
             Route::post('/unhide-story', 'unhideStory');
 
         });
