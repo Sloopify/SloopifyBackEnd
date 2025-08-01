@@ -1138,7 +1138,9 @@ class StoryController extends Controller
                  ->paginate($perPage);
  
              $mappedStories = $stories->getCollection()->map(function ($story) use ($user) {
-                 return $this->mapStory($story, $user);
+                 $storyData = $this->mapStory($story, $user);
+                 $storyData['is_my_story'] = $story->user_id == $user->id;
+                 return $storyData;
              });
  
              return response()->json([
@@ -1417,8 +1419,7 @@ class StoryController extends Controller
         try {
             $validatedData = $request->validate([
                 'story_id' => 'required|integer|exists:stories,id',
-                'selected_options' => 'required|array|min:1|max:5',
-                'selected_options.*' => 'integer|min:0'
+                'selected_option' => 'required|integer|min:0'
             ]);
 
             $user = Auth::guard('user')->user();
@@ -1432,31 +1433,29 @@ class StoryController extends Controller
                 ], 400);
             }
 
-            // Validate selected options
+            // Validate selected option
             $pollOptions = $story->poll_element['poll_options'] ?? [];
             $validOptionIds = array_column($pollOptions, 'option_id');
             
-            foreach ($validatedData['selected_options'] as $optionId) {
-                if (!in_array($optionId, $validOptionIds)) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Invalid poll option selected',
-                        'errors' => ['selected_options' => ['One or more selected options are invalid']]
-                    ], 422);
-                }
+            if (!in_array($validatedData['selected_option'], $validOptionIds)) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Invalid poll option selected',
+                    'errors' => ['selected_option' => ['The selected option is invalid']]
+                ], 422);
             }
 
             DB::beginTransaction();
 
-            // Create or update vote
+            // Create or update vote (single option)
             StoryPollVote::updateOrCreate(
                 [
                     'story_id' => $story->id,
                     'user_id' => $user->id
                 ],
                 [
-                    'selected_options' => $validatedData['selected_options']
+                    'selected_options' => [$validatedData['selected_option']]
                 ]
             );
 
@@ -1468,7 +1467,7 @@ class StoryController extends Controller
                 'message' => 'Vote recorded successfully',
                 'data' => [
                     'results' => $story->poll_results,
-                    'selected_options' => $validatedData['selected_options']
+                    'selected_option' => $validatedData['selected_option']
                 ]
             ], 200);
 
@@ -1486,6 +1485,102 @@ class StoryController extends Controller
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to record vote',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function replyToStory(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'story_id' => 'required|integer|exists:stories,id',
+                'reply_text' => 'nullable|string|max:1000',
+                'reply_media' => 'nullable|file|mimes:jpeg,png,gif,mp4|max:25600',
+                'reply_type' => 'required|in:text,media,emoji',
+                'emoji' => 'nullable|string|max:10'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $story = Story::active()->visibleTo($user->id)->findOrFail($validatedData['story_id']);
+
+            // Validate reply type requirements
+            if ($validatedData['reply_type'] === 'text' && empty($validatedData['reply_text'])) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Reply text is required for text type replies',
+                    'errors' => ['reply_text' => ['Reply text is required for text type replies']]
+                ], 422);
+            }
+
+            if ($validatedData['reply_type'] === 'media' && !$request->hasFile('reply_media')) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Reply media is required for media type replies',
+                    'errors' => ['reply_media' => ['Reply media is required for media type replies']]
+                ], 422);
+            }
+
+            if ($validatedData['reply_type'] === 'emoji' && empty($validatedData['emoji'])) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Emoji is required for emoji type replies',
+                    'errors' => ['emoji' => ['Emoji is required for emoji type replies']]
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            $replyMediaPath = null;
+            if ($request->hasFile('reply_media')) {
+                $file = $request->file('reply_media');
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $replyMediaPath = $file->storeAs('story_replies', $filename, 'public');
+            }
+
+            $reply = StoryReply::create([
+                'story_id' => $story->id,
+                'user_id' => $user->id,
+                'reply_text' => $validatedData['reply_text'] ?? null,
+                'reply_media_path' => $replyMediaPath,
+                'reply_type' => $validatedData['reply_type'],
+                'emoji' => $validatedData['emoji'] ?? null
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Reply sent successfully',
+                'data' => [
+                    'id' => $reply->id,
+                    'reply_text' => $reply->reply_text,
+                    'reply_media_url' => $reply->reply_media_url,
+                    'reply_type' => $reply->reply_type,
+                    'emoji' => $reply->emoji,
+                    'user' => app(AuthController::class)->mapUserDetails($reply->user),
+                    'created_at' => $reply->created_at
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to send reply',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -1536,63 +1631,6 @@ class StoryController extends Controller
     // }
 
 
-   
-
-    public function replyToStory(Request $request, $storyId)
-    {
-        try {
-            $validatedData = $request->validate([
-                'reply_text' => 'nullable|string|max:1000',
-                'reply_media' => 'nullable|file|mimes:jpeg,png,gif,mp4|max:25600',
-                'reply_type' => 'required|in:text,media,emoji',
-                'emoji' => 'nullable|string|max:10'
-            ]);
-
-            $user = Auth::guard('user')->user();
-            $story = Story::active()->visibleTo($user->id)->findOrFail($storyId);
-
-            $replyMediaPath = null;
-            if ($request->hasFile('reply_media')) {
-                $file = $request->file('reply_media');
-                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                $replyMediaPath = $file->storeAs('story_replies', $filename, 'public');
-            }
-
-            $reply = StoryReply::create([
-                'story_id' => $story->id,
-                'user_id' => $user->id,
-                'reply_text' => $validatedData['reply_text'] ?? null,
-                'reply_media_path' => $replyMediaPath,
-                'reply_type' => $validatedData['reply_type'],
-                'emoji' => $validatedData['emoji'] ?? null
-            ]);
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Reply sent successfully',
-                'data' => [
-                    'id' => $reply->id,
-                    'reply_text' => $reply->reply_text,
-                    'reply_media_url' => $reply->reply_media_url,
-                    'reply_type' => $reply->reply_type,
-                    'emoji' => $reply->emoji,
-                    'user' => app(AuthController::class)->mapUserDetails($reply->user),
-                    'created_at' => $reply->created_at
-                ]
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to send reply',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-   
   
 
     public function hideStory(Request $request)
