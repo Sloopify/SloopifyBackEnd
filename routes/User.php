@@ -192,16 +192,13 @@ Route::group(['prefix' => 'api/v1'], function () {
             Route::post('/vote-story-poll', 'voteStoryPoll');
 
             Route::post('/reply-to-story', 'replyToStory');
-
-
-
-
-         
-
-            Route::get('/get-story-replies', 'getStoryReplies');
             
             Route::post('/hide-story', 'hideStory');
 
+
+
+
+            
             Route::post('/unhide-story', 'unhideStory');
 
         });
