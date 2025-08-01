@@ -1586,69 +1586,24 @@ class StoryController extends Controller
         }
     }
 
-
-    // public function getStoryReplies(Request $request)
-    // {
-    //     try {
-    //         $validatedData = $request->validate([
-    //             'story_id' => 'required|integer|exists:stories,id'
-    //         ]);
-    //         $user = Auth::guard('user')->user();
-    //         $story = Story::where('user_id', $user->id)->findOrFail($validatedData['story_id']);
-
-    //         $replies = StoryReply::with('user')
-    //             ->where('story_id', $story->id)
-    //             ->orderBy('created_at', 'desc')
-    //             ->get();
-
-    //         $mappedReplies = $replies->map(function ($reply) {
-    //             return [
-    //                 'id' => $reply->id,
-    //                 'reply_text' => $reply->reply_text,
-    //                 'reply_media_url' => $reply->reply_media_url,
-    //                 'reply_type' => $reply->reply_type,
-    //                 'emoji' => $reply->emoji,
-    //                 'user' => $this->mapUserDetails($reply->user),
-    //                 'created_at' => $reply->created_at
-    //             ];
-    //         });
-
-    //         return response()->json([
-    //             'status_code' => 200,
-    //             'success' => true,
-    //             'message' => 'Story replies retrieved successfully',
-    //             'data' => $mappedReplies
-    //         ], 200);
-
-    //     } catch (Exception $e) {
-    //         return response()->json([
-    //             'status_code' => 404,
-    //             'success' => false,
-    //             'message' => 'Story not found',
-    //             'error' => $e->getMessage()
-    //         ], 404);
-    //     }
-    // }
-
-
-  
-
     public function hideStory(Request $request)
     {
         try {
             $validatedData = $request->validate([
-                'story_owner_id' => 'nullable|exists:users,id',
-                'specific_story_id' => 'nullable|exists:stories,id',
+                'story_owner_id' => 'nullable|integer|exists:users,id',
+                'specific_story_id' => 'nullable|integer|exists:stories,id',
                 'hide_type' => 'required|in:permanent,30_days,specific_story'
             ]);
 
             $user = Auth::guard('user')->user();
 
+            // Validate required parameters based on hide type
             if ($validatedData['hide_type'] === 'specific_story' && empty($validatedData['specific_story_id'])) {
                 return response()->json([
                     'status_code' => 422,
                     'success' => false,
-                    'message' => 'Specific story ID is required for specific story hide type'
+                    'message' => 'Specific story ID is required for specific story hide type',
+                    'errors' => ['specific_story_id' => ['Specific story ID is required for specific story hide type']]
                 ], 422);
             }
 
@@ -1656,7 +1611,30 @@ class StoryController extends Controller
                 return response()->json([
                     'status_code' => 422,
                     'success' => false,
-                    'message' => 'Story owner ID is required for permanent or 30 days hide types'
+                    'message' => 'Story owner ID is required for permanent or 30 days hide types',
+                    'errors' => ['story_owner_id' => ['Story owner ID is required for permanent or 30 days hide types']]
+                ], 422);
+            }
+
+            // Validate story ownership for specific story hide
+            if ($validatedData['hide_type'] === 'specific_story' && !empty($validatedData['specific_story_id'])) {
+                $story = Story::find($validatedData['specific_story_id']);
+                if (!$story) {
+                    return response()->json([
+                        'status_code' => 404,
+                        'success' => false,
+                        'message' => 'Story not found'
+                    ], 404);
+                }
+            }
+
+            // Validate user cannot hide their own stories
+            if (!empty($validatedData['story_owner_id']) && $validatedData['story_owner_id'] == $user->id) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'You cannot hide your own stories',
+                    'errors' => ['story_owner_id' => ['You cannot hide your own stories']]
                 ], 422);
             }
 
@@ -1665,9 +1643,30 @@ class StoryController extends Controller
                 $expiresAt = Carbon::now()->addDays(30);
             }
 
+            DB::beginTransaction();
+
+            // Check if hide setting already exists
+            $existingHide = DB::table('story_hide_settings')
+                ->where('user_id', $user->id)
+                ->where('hide_type', $validatedData['hide_type']);
+
+            if ($validatedData['hide_type'] === 'specific_story') {
+                $existingHide->where('specific_story_id', $validatedData['specific_story_id']);
+            } else {
+                $existingHide->where('story_owner_id', $validatedData['story_owner_id']);
+            }
+
+            if ($existingHide->exists()) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'Story is already hidden with this hide type'
+                ], 400);
+            }
+
             DB::table('story_hide_settings')->insert([
                 'user_id' => $user->id,
-                'story_owner_id' => $validatedData['story_owner_id'] ?? null,
+                'story_owner_id' => $validatedData['hide_type'] === 'specific_story' ? null : $validatedData['story_owner_id'],
                 'specific_story_id' => $validatedData['specific_story_id'] ?? null,
                 'hide_type' => $validatedData['hide_type'],
                 'expires_at' => $expiresAt,
@@ -1675,13 +1674,24 @@ class StoryController extends Controller
                 'updated_at' => now()
             ]);
 
+            DB::commit();
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Story hidden successfully'
             ], 200);
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status_code' => 500,
                 'success' => false,
@@ -1690,6 +1700,14 @@ class StoryController extends Controller
             ], 500);
         }
     }
+
+
+   
+
+
+  
+
+    
 
     public function unhideStory(Request $request)
     {
