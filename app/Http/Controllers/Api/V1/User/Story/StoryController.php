@@ -1176,6 +1176,87 @@ class StoryController extends Controller
          }
      }
 
+     public function getStoriesByUserId(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'user_id' => 'required|integer|exists:users,id',
+                 'page' => 'nullable|integer|min:1',
+                 'per_page' => 'nullable|integer|min:1|max:100'
+             ]);
+ 
+             $currentUser = Auth::guard('user')->user();
+             $targetUserId = $validatedData['user_id'];
+             $perPage = $validatedData['per_page'] ?? 20;
+ 
+             // Check if user is trying to get their own stories
+             if ($currentUser->id == $targetUserId) {
+                 return response()->json([
+                     'status_code' => 400,
+                     'success' => false,
+                     'message' => 'Use viewMyStoryById to get your own stories'
+                 ], 400);
+             }
+ 
+             // Check if users are friends (for privacy)
+             if (!$currentUser->isFriendsWith($targetUserId)) {
+                 return response()->json([
+                     'status_code' => 403,
+                     'success' => false,
+                     'message' => 'You can only view stories from your friends'
+                 ], 403);
+             }
+ 
+             $stories = Story::with(['user', 'media', 'views'])
+                 ->where('user_id', $targetUserId)
+                 ->active()
+                 ->visibleTo($currentUser->id)
+                 ->orderBy('created_at', 'asc') // Oldest to newest
+                 ->paginate($perPage);
+ 
+             $mappedStories = $stories->getCollection()->map(function ($story) use ($currentUser) {
+                 $storyData = $this->mapStory($story, $currentUser);
+                 $storyData['is_my_story'] = false; // These are not the current user's stories
+                 return $storyData;
+             });
+ 
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'User stories retrieved successfully',
+                 'data' => [
+                     'stories' => $mappedStories,
+                     'user' => app(AuthController::class)->mapUserDetails(User::find($targetUserId)),
+                     'total_stories' => $stories->total()
+                 ],
+                 'pagination' => [
+                     'current_page' => $stories->currentPage(),
+                     'last_page' => $stories->lastPage(),
+                     'per_page' => $stories->perPage(),
+                     'total' => $stories->total(),
+                     'from' => $stories->firstItem(),
+                     'to' => $stories->lastItem(),
+                     'has_more_pages' => $stories->hasMorePages()
+                 ]
+             ], 200);
+ 
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to retrieve user stories',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
      public function viewStory(Request $request)
      {
          try {
