@@ -88,18 +88,6 @@ class StoryController extends Controller
          ];
     }
 
- 
-    // private function mapUserDetails($user)
-    // {
-    //      return [
-    //          'id' => $user->id,
-    //          'first_name' => $user->first_name,
-    //          'last_name' => $user->last_name,
-    //          'email' => $user->email,
-    //          'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : null)
-    //      ];
-    // }
-
     private function mapStoryAudio($audio, $user = null)
     {
         return [
@@ -1137,25 +1125,38 @@ class StoryController extends Controller
                  ->orderBy('created_at', 'desc')
                  ->paginate($perPage);
  
-             $mappedStories = $stories->getCollection()->map(function ($story) use ($user) {
-                 $storyData = $this->mapStory($story, $user);
-                 $storyData['is_my_story'] = $story->user_id == $user->id;
-                 return $storyData;
-             });
+             // Group stories by user ID
+             $groupedStories = $stories->getCollection()->groupBy('user_id')->map(function ($userStories, $userId) use ($user) {
+                 $firstStory = $userStories->first();
+                 $userDetails = app(AuthController::class)->mapUserDetails($firstStory->user);
+                 
+                 return [
+                     'user' => $userDetails,
+                     'stories' => $userStories->map(function ($story) use ($user) {
+                         $storyData = $this->mapStory($story, $user);
+                         $storyData['is_my_story'] = $story->user_id == $user->id;
+                         return $storyData;
+                     })->values(),
+                     'total_stories' => $userStories->count(),
+                     'latest_story_time' => $userStories->max('created_at')
+                 ];
+             })->values();
  
              return response()->json([
                  'status_code' => 200,
                  'success' => true,
                  'message' => 'Stories retrieved successfully',
-                 'data' => $mappedStories,
-                 'pagination' => [
-                     'current_page' => $stories->currentPage(),
-                     'last_page' => $stories->lastPage(),
-                     'per_page' => $stories->perPage(),
-                     'total' => $stories->total(),
-                     'from' => $stories->firstItem(),
-                     'to' => $stories->lastItem(),
-                     'has_more_pages' => $stories->hasMorePages()
+                 'data' => [
+                     'stories_by_user' => $groupedStories,
+                     'pagination' => [
+                         'current_page' => $stories->currentPage(),
+                         'last_page' => $stories->lastPage(),
+                         'per_page' => $stories->perPage(),
+                         'total' => $stories->total(),
+                         'from' => $stories->firstItem(),
+                         'to' => $stories->lastItem(),
+                         'has_more_pages' => $stories->hasMorePages()
+                     ]
                  ]
              ], 200);
  
