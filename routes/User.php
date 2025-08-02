@@ -183,6 +183,8 @@ Route::group(['prefix' => 'api/v1'], function () {
             
             Route::post('/get-stories', 'getStories');
 
+            Route::post('/get-stories-by-user-id', 'getStoriesByUserId');
+
             Route::post('/view-story', 'viewStory');
 
             Route::post('/view-my-story-by-id', 'viewMyStoryById');
