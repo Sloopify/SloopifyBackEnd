@@ -28,6 +28,7 @@ return new class extends Migration
             $table->text('moderation_reason')->nullable();
             $table->string('gif_url')->nullable();
             $table->boolean('is_pinned')->default(false);
+            $table->boolean('comments_enabled')->default(true);
             $table->boolean('is_saved')->default(false);
             $table->boolean('is_notified')->default(true);
             $table->timestamps();
