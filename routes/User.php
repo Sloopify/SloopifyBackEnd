@@ -146,6 +146,9 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('check-post-saved-status' , 'checkPostSavedStatus');
 
+        Route::post('toggle-post-comments' , 'togglePostComments');
+
+        Route::post('get-post-comments-status' , 'getPostCommentsStatus');
 
       });
     });
