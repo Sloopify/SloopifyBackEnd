@@ -25,6 +25,7 @@ use App\Models\User;
 use App\Models\PersonalOccasionSetting;
 use App\Models\UserPlace;
 use App\Models\PersonalOccasionCategory;
+use App\Http\Controllers\Api\V1\User\Auth\AuthController;
 
 class PostController extends Controller
 {
@@ -136,45 +137,11 @@ class PostController extends Controller
         })->values();
     }
 
-    public function mapUserDetails($user)
-    {
-        $phoneDetails = PhoneNumberHelper::parsePhoneNumber($user->phone);
-
-        return [
-            'id' => $user->id,
-            'first_name' => $user->first_name,
-            'last_name' => $user->last_name,
-            'phone' => [
-                'full' => $phoneDetails['formatted'],
-                'code' => $phoneDetails['code'],
-                'number' => $phoneDetails['number'],
-                'valid' => $phoneDetails['valid']
-            ],
-            'email' => $user->email,
-            'email_verified' => !is_null($user->email_verified_at),
-            'gender' => $user->gender,
-            'status' => $user->status,
-            'is_blocked' => (bool)$user->is_blocked,
-            'age' => $user->birthday ? now()->diffInYears($user->birthday) : null,
-            'birthday' => $user->birthday,
-            'bio' => $user->bio,
-            'country' => $user->country,
-            'city' => $user->city,
-            'provider' => $user->provider,
-            'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : null),
-            'referral_code' => $user->referral_code,
-            'referral_link' => $user->referral_link,
-            'reffered_by' => $user->reffered_by,
-            'last_login_at' => $user->last_login_at,
-            'created_at' => $user->created_at,
-            'updated_at' => $user->updated_at,
-        ];
-    }
 
     public function mapUsersDetails($users)
     {
         return $users->map(function ($user) {
-            return $this->mapUserDetails($user);
+            return app(AuthController::class)->mapUserDetails($user);
         })->values();
     }
 
@@ -1225,7 +1192,7 @@ class PostController extends Controller
 
             // Map friends with specific/except flags
             $mappedFriends = $friends->getCollection()->map(function ($friend) use ($specificFriendIds, $friendExceptIds) {
-                $friendData = $this->mapUserDetails($friend);
+                $friendData = app(AuthController::class)->mapUserDetails($friend);
                 $friendData['is_specific_friend'] = in_array($friend->id, $specificFriendIds);
                 $friendData['is_friend_except'] = in_array($friend->id, $friendExceptIds);
                 return $friendData;
@@ -1321,7 +1288,7 @@ class PostController extends Controller
 
             // Map friends with specific/except flags
             $mappedFriends = $friends->getCollection()->map(function ($friend) use ($specificFriendIds, $friendExceptIds) {
-                $friendData = $this->mapUserDetails($friend);
+                $friendData = app(AuthController::class)->mapUserDetails($friend);
                 $friendData['is_specific_friend'] = in_array($friend->id, $specificFriendIds);
                 $friendData['is_friend_except'] = in_array($friend->id, $friendExceptIds);
                 return $friendData;
@@ -1571,53 +1538,6 @@ class PostController extends Controller
         }
     }
 
-    public function searchUserPlaces(Request $request)
-    {
-        try{
-            $validatedData = $request->validate([
-                'search' => 'required|string|max:255',
-                'page' => 'nullable|integer|min:1',
-                'per_page' => 'nullable|integer|min:1|max:100'
-            ]);
-
-            $perPage = $validatedData['per_page'] ?? 20;
-
-            $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)
-                ->where('status', 'active')
-                ->where('name', 'like', '%' . $validatedData['search'] . '%')
-                ->paginate($perPage);
-
-            $mappedUserPlaces = $userPlaces->getCollection()->map(function ($userPlace) {
-                return $this->mapUserPlaces($userPlace);
-            });
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'User places retrieved successfully',
-                'data' => [
-                    'user_places' => $mappedUserPlaces,
-                    'pagination' => [
-                        'current_page' => $userPlaces->currentPage(),
-                        'last_page' => $userPlaces->lastPage(),
-                        'per_page' => $userPlaces->perPage(),
-                        'total' => $userPlaces->total(),
-                        'from' => $userPlaces->firstItem(),
-                        'to' => $userPlaces->lastItem(),
-                        'has_more_pages' => $userPlaces->hasMorePages()
-                    ]
-                ]
-            ], 200);
-        } catch (ValidationException $e) {
-            return response()->json([
-                'status_code' => 422,
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        }
-    }
-
     public function getUserPlaceById(Request $request)
     {
         try{
@@ -1739,22 +1659,118 @@ class PostController extends Controller
         }
     }
 
-    
+    public function searchUserPlaces(Request $request)
+    {
+        try{
+            $validatedData = $request->validate([
+                'search' => 'required|string|max:255',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
 
+            $perPage = $validatedData['per_page'] ?? 20;
 
+            $userPlaces = UserPlace::where('user_id', Auth::guard('user')->user()->id)
+                ->where('status', 'active')
+                ->where('name', 'like', '%' . $validatedData['search'] . '%')
+                ->paginate($perPage);
 
+            $mappedUserPlaces = $userPlaces->getCollection()->map(function ($userPlace) {
+                return $this->mapUserPlaces($userPlace);
+            });
 
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User places retrieved successfully',
+                'data' => [
+                    'user_places' => $mappedUserPlaces,
+                    'pagination' => [
+                        'current_page' => $userPlaces->currentPage(),
+                        'last_page' => $userPlaces->lastPage(),
+                        'per_page' => $userPlaces->perPage(),
+                        'total' => $userPlaces->total(),
+                        'from' => $userPlaces->firstItem(),
+                        'to' => $userPlaces->lastItem(),
+                        'has_more_pages' => $userPlaces->hasMorePages()
+                    ]
+                ]
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        }
+    }
 
+    public function pinPost(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'is_pinned' => 'required|boolean'
+            ]);
 
-   
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it belongs to the user
+            $post = Post::where('user_id', $user->id)
+                ->findOrFail($validatedData['post_id']);
 
+            DB::beginTransaction();
 
-    public function update(Request $request, $id)
+            // If pinning this post, unpin any previously pinned posts
+            if ($validatedData['is_pinned']) {
+                Post::where('user_id', $user->id)
+                    ->where('is_pinned', true)
+                    ->update(['is_pinned' => false]);
+            }
+
+            // Update the post's pinned status
+            $post->update(['is_pinned' => $validatedData['is_pinned']]);
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $validatedData['is_pinned'] ? 'Post pinned successfully' : 'Post unpinned successfully',
+                'data' => [
+                    'post_id' => $post->id,
+                    'is_pinned' => $post->is_pinned,
+                    'pinned_at' => $post->is_pinned ? $post->updated_at : null
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update post pin status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function update(Request $request)
     {
         try {
             $post = Post::where('user_id', Auth::guard('user')->user()->id)->findOrFail($id);
 
             $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
                 'content' => 'nullable|string|max:10000',
                 'text_properties' => 'nullable|array',
                 'privacy' => 'nullable|in:public,friends,specific_friends,friend_except,only_me',
@@ -1838,6 +1854,14 @@ class PostController extends Controller
             ], 500);
         }
     }
+
+
+
+
+   
+
+
+    
 
     public function destroy($id)
     {
@@ -2089,8 +2113,7 @@ class PostController extends Controller
             ], 500);
         }
     }
- 
+
     
 
-  
 }
