@@ -132,6 +132,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('search-user-places' , 'searchUserPlaces');
 
+        Route::post('pin-post' , 'pinPost');
+
       });
     });
 
