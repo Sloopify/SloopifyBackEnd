@@ -2360,6 +2360,199 @@ class PostController extends Controller
         }
     }
 
+    public function savePost(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'is_saved' => 'required|boolean'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it's visible to the user
+            $post = Post::approved()
+                ->visibleTo($user->id)
+                ->findOrFail($validatedData['post_id']);
+
+            DB::beginTransaction();
+
+            if ($validatedData['is_saved']) {
+                // Check if post is already saved
+                $existingSave = DB::table('saved_posts')
+                    ->where('user_id', $user->id)
+                    ->where('post_id', $post->id)
+                    ->first();
+
+                if (!$existingSave) {
+                    // Save the post
+                    DB::table('saved_posts')->insert([
+                        'user_id' => $user->id,
+                        'post_id' => $post->id,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                }
+
+                $message = 'Post saved successfully';
+            } else {
+                // Unsave the post
+                DB::table('saved_posts')
+                    ->where('user_id', $user->id)
+                    ->where('post_id', $post->id)
+                    ->delete();
+
+                $message = 'Post removed from saved posts';
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'post_id' => $post->id,
+                    'is_saved' => $validatedData['is_saved'],
+                    'saved_at' => $validatedData['is_saved'] ? now() : null
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update post save status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getSavedPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            // Get saved posts with pagination
+            $savedPosts = DB::table('saved_posts')
+                ->join('posts', 'saved_posts.post_id', '=', 'posts.id')
+                ->where('saved_posts.user_id', $user->id)
+                ->where('posts.status', 'approved')
+                ->select('posts.*', 'saved_posts.created_at as saved_at')
+                ->orderBy('saved_posts.created_at', 'desc')
+                ->paginate($perPage);
+
+            // Load relationships for each post
+            $posts = Post::with(['user', 'media', 'poll', 'personalOccasion'])
+                ->whereIn('id', $savedPosts->pluck('id'))
+                ->get()
+                ->keyBy('id');
+
+            // Map posts with save information
+            $mappedPosts = $savedPosts->getCollection()->map(function ($savedPost) use ($posts) {
+                $post = $posts->get($savedPost->id);
+                if (!$post) return null;
+
+                $postData = $post->toArray();
+                $postData['saved_at'] = $savedPost->saved_at;
+                $postData['is_saved'] = true;
+
+                return $postData;
+            })->filter();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Saved posts retrieved successfully',
+                'data' => [
+                    'posts' => $mappedPosts->values(),
+                    'pagination' => [
+                        'current_page' => $savedPosts->currentPage(),
+                        'last_page' => $savedPosts->lastPage(),
+                        'per_page' => $savedPosts->perPage(),
+                        'total' => $savedPosts->total(),
+                        'from' => $savedPosts->firstItem(),
+                        'to' => $savedPosts->lastItem(),
+                        'has_more_pages' => $savedPosts->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve saved posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function checkPostSavedStatus(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            // Check if post is saved
+            $savedPost = DB::table('saved_posts')
+                ->where('user_id', $user->id)
+                ->where('post_id', $validatedData['post_id'])
+                ->first();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Post save status retrieved successfully',
+                'data' => [
+                    'post_id' => $validatedData['post_id'],
+                    'is_saved' => !is_null($savedPost),
+                    'saved_at' => $savedPost ? $savedPost->created_at : null
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to check post save status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 
@@ -2614,5 +2807,5 @@ class PostController extends Controller
         }
     }
 
-
+ 
 }

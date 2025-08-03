@@ -140,6 +140,13 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('get-post-notification-settings' , 'getPostNotificationSettings');
 
+        Route::post('save-post' , 'savePost');
+
+        Route::post('get-saved-posts' , 'getSavedPosts');
+
+        Route::post('check-post-saved-status' , 'checkPostSavedStatus');
+
+
       });
     });
 
