@@ -134,6 +134,12 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('pin-post' , 'pinPost');
 
+        Route::post('update-post' , 'updatePost');
+
+        Route::post('mute-post-notifications' , 'mutePostNotifications');
+
+        Route::post('get-post-notification-settings' , 'getPostNotificationSettings');
+
       });
     });
 

@@ -26,6 +26,7 @@ use App\Models\PersonalOccasionSetting;
 use App\Models\UserPlace;
 use App\Models\PersonalOccasionCategory;
 use App\Http\Controllers\Api\V1\User\Auth\AuthController;
+use Carbon\Carbon;
 
 class PostController extends Controller
 {
@@ -1764,46 +1765,187 @@ class PostController extends Controller
         }
     }
 
-    public function update(Request $request)
+    public function updatePost(Request $request)
     {
         try {
-            $post = Post::where('user_id', Auth::guard('user')->user()->id)->findOrFail($id);
-
             $validatedData = $request->validate([
                 'post_id' => 'required|integer|exists:posts,id',
                 'content' => 'nullable|string|max:10000',
                 'text_properties' => 'nullable|array',
+                'text_properties.color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
+                'text_properties.bold' => 'nullable|boolean',
+                'text_properties.italic' => 'nullable|boolean',
+                'text_properties.underline' => 'nullable|boolean',
+                'background_color' => 'nullable|array',
+                'background_color.*' => 'string|regex:/^#[0-9A-Fa-f]{6}$/',
                 'privacy' => 'nullable|in:public,friends,specific_friends,friend_except,only_me',
                 'specific_friends' => 'nullable|array',
                 'specific_friends.*' => 'exists:users,id',
                 'friend_except' => 'nullable|array',
                 'friend_except.*' => 'exists:users,id',
-                'mentions' => 'nullable|array',
+                'disappears_24h' => 'nullable|boolean',
                 'mentions.friends' => 'nullable|array',
                 'mentions.friends.*' => 'exists:users,id',
                 'mentions.place' => 'nullable|integer|exists:user_places,id',
                 'mentions.feeling' => 'nullable|string|max:100',
                 'mentions.activity' => 'nullable|string|max:100',
+                'media' => 'nullable|array',
+                'media.*.file' => 'required|file|mimes:jpeg,png,gif,mp4,avi|max:51200',
+                'media.*.order' => 'nullable|integer|min:1',
+                'media.*.auto_play' => 'nullable|boolean',
+                'media.*.apply_to_download' => 'nullable|boolean',
+                'media.*.is_rotate' => 'nullable|boolean',
+                'media.*.rotate_angle' => 'nullable|integer|min:0|max:360',
+                'media.*.is_flip_horizontal' => 'nullable|boolean',
+                'media.*.is_flip_vertical' => 'nullable|boolean',
+                'media.*.filter_name' => 'nullable|string|max:255',
+                'gif_url' => 'nullable|url|max:2048',
+                'is_pinned' => 'nullable|boolean'
             ]);
+
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it belongs to the user
+            $post = Post::where('user_id', $user->id)
+                ->findOrFail($validatedData['post_id']);
+
+            // Custom validation for background_color
+            if (!empty($validatedData['background_color'])) {
+                if ($post->type !== 'regular') {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'background_color' => ['Background colors can only be used with regular posts.']]
+                    ], 422);
+                }
+
+                if (!empty($validatedData['media']) || !empty($validatedData['gif_url'])) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'background_color' => ['Background colors cannot be used when uploading media files or using GIF URL.']]
+                    ], 422);
+                }
+
+                // Additional validation for background_color array
+                if (count($validatedData['background_color']) > 10) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'background_color' => ['You can specify a maximum of 10 background colors.']]
+                    ], 422);
+                }
+            }
+
+            // Custom validation for gif_url and media conflict
+            if (!empty($validatedData['gif_url']) && !empty($validatedData['media'])) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'gif_url' => ['You cannot use both GIF URL and upload media files at the same time.']]
+                ], 422);
+            }
+
+            // Custom validation for gif_url with post types
+            if (!empty($validatedData['gif_url'])) {
+                if ($post->type === 'poll') {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'gif_url' => ['GIF URL cannot be used with poll posts.']]
+                    ], 422);
+                }
+            }
+
+            // Custom validation for media order uniqueness
+            if (!empty($validatedData['media'])) {
+                $orders = [];
+                foreach ($validatedData['media'] as $index => $mediaItem) {
+                    if (isset($mediaItem['order'])) {
+                        $order = $mediaItem['order'];
+                        if (in_array($order, $orders)) {
+                            return response()->json([
+                                'status_code' => 422,
+                                'success' => false,
+                                'message' => 'Validation failed',
+                                'errors' => [
+                                    "media.{$index}.order" => ['Display order values must be unique for each media file.']]
+                            ], 422);
+                        }
+                        $orders[] = $order;
+                    }
+                }
+            }
 
             // Custom validation for mentions
             $mentions = $request->input('mentions', []);
             $hasFeeling = !empty($mentions['feeling']);
             $hasActivity = !empty($mentions['activity']);
             $hasPlace = !empty($mentions['place']);
+            $hasFriends = !empty($mentions['friends']);
             
-            if ($hasFeeling && $hasActivity) {
+            // Check if poll type has any mentions
+            if ($post->type === 'poll') {
+                if ($hasFeeling || $hasActivity || $hasPlace || $hasFriends) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'mentions' => ['Poll posts cannot have mentions, feelings, activities, or location.']]
+                    ], 422);
+                }
+            }
+            
+            // Check feeling and activity conflict for non-poll posts
+            if ($post->type !== 'poll' && $hasFeeling && $hasActivity) {
                 return response()->json([
                     'status_code' => 422,
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => ['mentions' => ['You cannot specify both feeling and activity at the same time.']]
+                    'errors' => [
+                        'mentions' =>
+                         ['You cannot specify both feeling and activity at the same time.']]
                 ], 422);
+            }
+
+            // Validate friendship for mentioned friends
+            if ($hasFriends && !empty($mentions['friends'])) {
+                $mentionedFriends = $mentions['friends'];
+                $invalidFriends = [];
+
+                foreach ($mentionedFriends as $friendId) {
+                    if (!$user->isFriendsWith($friendId)) {
+                        $invalidFriends[] = $friendId;
+                    }
+                }
+
+                if (!empty($invalidFriends)) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'mentions.friends' => [
+                                'You can only mention users who are your friends. Invalid friend IDs: ' . implode(', ', $invalidFriends)
+                            ]
+                        ]
+                    ], 422);
+                }
             }
 
             // Validate user place ownership
             if ($hasPlace && !empty($mentions['place'])) {
-                $user = Auth::guard('user')->user();
                 $userPlace = UserPlace::where('id', $mentions['place'])
                     ->where('user_id', $user->id)
                     ->where('status', 'active')
@@ -1823,11 +1965,171 @@ class PostController extends Controller
                 }
             }
 
+            // Validate friendship for specific_friends privacy
+            if (isset($validatedData['privacy']) && $validatedData['privacy'] === 'specific_friends' && !empty($validatedData['specific_friends'])) {
+                $specificFriends = $validatedData['specific_friends'];
+                $invalidSpecificFriends = [];
+
+                foreach ($specificFriends as $friendId) {
+                    if (!$user->isFriendsWith($friendId)) {
+                        $invalidSpecificFriends[] = $friendId;
+                    }
+                }
+
+                if (!empty($invalidSpecificFriends)) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'specific_friends' => [
+                                'You can only select users who are your friends. Invalid friend IDs: ' . implode(', ', $invalidSpecificFriends)
+                            ]
+                        ]
+                    ], 422);
+                }
+            }
+
+            // Validate friendship for friend_except privacy
+            if (isset($validatedData['privacy']) && $validatedData['privacy'] === 'friend_except' && !empty($validatedData['friend_except'])) {
+                $exceptFriends = $validatedData['friend_except'];
+                $invalidExceptFriends = [];
+
+                foreach ($exceptFriends as $friendId) {
+                    if (!$user->isFriendsWith($friendId)) {
+                        $invalidExceptFriends[] = $friendId;
+                    }
+                }
+
+                if (!empty($invalidExceptFriends)) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'friend_except' => [
+                                'You can only exclude users who are your friends. Invalid friend IDs: ' . implode(', ', $invalidExceptFriends)
+                            ]
+                        ]
+                    ], 422);
+                }
+            }
+
+            // Validate mentions consistency with privacy settings
+            if ($hasFriends && !empty($mentions['friends'])) {
+                $mentionedFriends = $mentions['friends'];
+
+                // For specific_friends privacy: mentioned friends must be in the specific_friends list
+                if (isset($validatedData['privacy']) && $validatedData['privacy'] === 'specific_friends' && !empty($validatedData['specific_friends'])) {
+                    $specificFriends = $validatedData['specific_friends'];
+                    $invalidMentions = [];
+
+                    foreach ($mentionedFriends as $mentionedId) {
+                        if (!in_array($mentionedId, $specificFriends)) {
+                            $invalidMentions[] = $mentionedId;
+                        }
+                    }
+
+                    if (!empty($invalidMentions)) {
+                        return response()->json([
+                            'status_code' => 422,
+                            'success' => false,
+                            'message' => 'Validation failed',
+                            'errors' => [
+                                'mentions.friends' => [
+                                    'You cannot mention friends who are not in your specific friends list for this post. Invalid mentions: ' . implode(', ', $invalidMentions)
+                                ]
+                            ]
+                        ], 422);
+                    }
+                }
+
+                // For friend_except privacy: mentioned friends must NOT be in the friend_except list
+                if (isset($validatedData['privacy']) && $validatedData['privacy'] === 'friend_except' && !empty($validatedData['friend_except'])) {
+                    $exceptFriends = $validatedData['friend_except'];
+                    $invalidMentions = [];
+
+                    foreach ($mentionedFriends as $mentionedId) {
+                        if (in_array($mentionedId, $exceptFriends)) {
+                            $invalidMentions[] = $mentionedId;
+                        }
+                    }
+
+                    if (!empty($invalidMentions)) {
+                        return response()->json([
+                            'status_code' => 422,
+                            'success' => false,
+                            'message' => 'Validation failed',
+                            'errors' => [
+                                'mentions.friends' => [
+                                    'You cannot mention friends who are excluded from seeing this post. Invalid mentions: ' . implode(', ', $invalidMentions)
+                                ]
+                            ]
+                        ], 422);
+                    }
+                }
+            }
+
             DB::beginTransaction();
 
-            $post->update($validatedData);
+            // Prepare update data
+            $updateData = [];
+            
+            if (isset($validatedData['content'])) {
+                $updateData['content'] = $validatedData['content'];
+            }
+            if (isset($validatedData['text_properties'])) {
+                $updateData['text_properties'] = $validatedData['text_properties'];
+            }
+            if (isset($validatedData['background_color'])) {
+                $updateData['background_color'] = $validatedData['background_color'];
+            }
+            if (isset($validatedData['privacy'])) {
+                $updateData['privacy'] = $validatedData['privacy'];
+                $updateData['specific_friends'] = $validatedData['privacy'] === 'specific_friends' ? ($validatedData['specific_friends'] ?? null) : null;
+                $updateData['friend_except'] = $validatedData['privacy'] === 'friend_except' ? ($validatedData['friend_except'] ?? null) : null;
+            }
+            if (isset($validatedData['disappears_24h'])) {
+                $updateData['disappears_24h'] = $validatedData['disappears_24h'];
+            }
+            if (isset($validatedData['gif_url'])) {
+                $updateData['gif_url'] = $validatedData['gif_url'];
+            }
+            if (isset($validatedData['is_pinned'])) {
+                // If pinning this post, unpin any previously pinned posts
+                if ($validatedData['is_pinned']) {
+                    Post::where('user_id', $user->id)
+                        ->where('id', '!=', $post->id)
+                        ->where('is_pinned', true)
+                        ->update(['is_pinned' => false]);
+                }
+                $updateData['is_pinned'] = $validatedData['is_pinned'];
+            }
+
+            // Update mentions only for non-poll posts
+            if ($post->type !== 'poll') {
+                $updateData['mentions'] = $mentions;
+            }
+
+            // Update the post
+            $post->update($updateData);
+
+            // Handle media uploads if provided
+            if (!empty($validatedData['media'])) {
+                // Delete existing media files
+                foreach ($post->media as $media) {
+                    Storage::disk('public')->delete($media->path);
+                }
+                $post->media()->delete();
+                
+                // Upload new media files
+                $this->handleMediaUploads($post, $validatedData['media']);
+            }
 
             DB::commit();
+
+            // Load relationships for response
+            $post->load(['user', 'media', 'poll', 'personalOccasion']);
 
             return response()->json([
                 'status_code' => 200,
@@ -1855,13 +2157,211 @@ class PostController extends Controller
         }
     }
 
+    public function mutePostNotifications(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'mute_type' => 'required|in:24_hours,7_days,30_days,permanent,unmute',
+                'mute_reactions' => 'nullable|boolean',
+                'mute_comments' => 'nullable|boolean',
+                'mute_shares' => 'nullable|boolean',
+                'mute_all' => 'nullable|boolean'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it belongs to the user
+            $post = Post::where('user_id', $user->id)
+                ->findOrFail($validatedData['post_id']);
+
+            DB::beginTransaction();
+
+            // Calculate expiration time based on mute type
+            $expiresAt = null;
+            if ($validatedData['mute_type'] !== 'permanent' && $validatedData['mute_type'] !== 'unmute') {
+                switch ($validatedData['mute_type']) {
+                    case '24_hours':
+                        $expiresAt = Carbon::now()->addHours(24);
+                        break;
+                    case '7_days':
+                        $expiresAt = Carbon::now()->addDays(7);
+                        break;
+                    case '30_days':
+                        $expiresAt = Carbon::now()->addDays(30);
+                        break;
+                }
+            }
+
+            // If unmuting, delete the mute setting
+            if ($validatedData['mute_type'] === 'unmute') {
+                DB::table('post_notification_settings')
+                    ->where('post_id', $post->id)
+                    ->where('post_owner_id', $user->id)
+                    ->delete();
+
+                DB::commit();
+
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Post notifications unmuted successfully',
+                    'data' => [
+                        'post_id' => $post->id,
+                        'mute_type' => 'unmuted',
+                        'expires_at' => null
+                    ]
+                ], 200);
+            }
+
+            // Check if mute setting already exists
+            $existingMute = DB::table('post_notification_settings')
+                ->where('post_id', $post->id)
+                ->where('post_owner_id', $user->id)
+                ->first();
+
+            $muteData = [
+                'post_id' => $post->id,
+                'post_owner_id' => $user->id,
+                'mute_type' => $validatedData['mute_type'],
+                'mute_reactions' => $validatedData['mute_reactions'] ?? false,
+                'mute_comments' => $validatedData['mute_comments'] ?? false,
+                'mute_shares' => $validatedData['mute_shares'] ?? false,
+                'mute_all' => $validatedData['mute_all'] ?? false,
+                'expires_at' => $expiresAt,
+                'updated_at' => now()
+            ];
+
+            if ($existingMute) {
+                // Update existing mute setting
+                DB::table('post_notification_settings')
+                    ->where('post_id', $post->id)
+                    ->where('post_owner_id', $user->id)
+                    ->update($muteData);
+            } else {
+                // Create new mute setting
+                $muteData['created_at'] = now();
+                DB::table('post_notification_settings')->insert($muteData);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Post notification settings updated successfully',
+                'data' => [
+                    'post_id' => $post->id,
+                    'mute_type' => $validatedData['mute_type'],
+                    'mute_reactions' => $validatedData['mute_reactions'] ?? false,
+                    'mute_comments' => $validatedData['mute_comments'] ?? false,
+                    'mute_shares' => $validatedData['mute_shares'] ?? false,
+                    'mute_all' => $validatedData['mute_all'] ?? false,
+                    'expires_at' => $expiresAt,
+                    'created_at' => $existingMute ? $existingMute->created_at : now(),
+                    'updated_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update post notification settings',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getPostNotificationSettings(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it belongs to the user
+            $post = Post::where('user_id', $user->id)
+                ->findOrFail($validatedData['post_id']);
+
+            // Get current notification settings
+            $notificationSettings = DB::table('post_notification_settings')
+                ->where('post_id', $post->id)
+                ->where('post_owner_id', $user->id)
+                ->first();
+
+            if (!$notificationSettings) {
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No notification settings found for this post',
+                    'data' => [
+                        'post_id' => $post->id,
+                        'mute_type' => 'none',
+                        'mute_reactions' => false,
+                        'mute_comments' => false,
+                        'mute_shares' => false,
+                        'mute_all' => false,
+                        'expires_at' => null,
+                        'is_expired' => false
+                    ]
+                ], 200);
+            }
+
+            // Check if the mute setting has expired
+            $isExpired = false;
+            if ($notificationSettings->expires_at && Carbon::parse($notificationSettings->expires_at)->isPast()) {
+                $isExpired = true;
+            }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Post notification settings retrieved successfully',
+                'data' => [
+                    'post_id' => $post->id,
+                    'mute_type' => $notificationSettings->mute_type,
+                    'mute_reactions' => (bool) $notificationSettings->mute_reactions,
+                    'mute_comments' => (bool) $notificationSettings->mute_comments,
+                    'mute_shares' => (bool) $notificationSettings->mute_shares,
+                    'mute_all' => (bool) $notificationSettings->mute_all,
+                    'expires_at' => $notificationSettings->expires_at,
+                    'is_expired' => $isExpired,
+                    'created_at' => $notificationSettings->created_at,
+                    'updated_at' => $notificationSettings->updated_at
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve post notification settings',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
 
-   
-
-
-    
 
     public function destroy($id)
     {
@@ -2114,6 +2614,5 @@ class PostController extends Controller
         }
     }
 
-    
 
 }
