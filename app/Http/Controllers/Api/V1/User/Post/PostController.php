@@ -2723,12 +2723,114 @@ class PostController extends Controller
         }
     }
 
+    public function postInterest(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'interest_type' => 'required|in:interested,not_interested'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it's from a friend and visible to the user
+            $post = Post::approved()
+                ->visibleTo($user->id)
+                ->findOrFail($validatedData['post_id']);
+
+            // Ensure the post is from a friend (not the user's own post)
+            if ($post->user_id === $user->id) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You cannot mark your own posts as interested/not interested'
+                ], 400);
+            }
+
+            // Check if user is friends with the post owner
+            if (!$user->isFriendsWith($post->user_id)) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You can only mark posts from your friends as interested/not interested'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            // Check if interest feedback already exists
+            $existingInterest = DB::table('post_interest_feedback')
+                ->where('user_id', $user->id)
+                ->where('post_id', $post->id)
+                ->first();
+
+            if ($existingInterest) {
+                // Update existing feedback
+                DB::table('post_interest_feedback')
+                    ->where('user_id', $user->id)
+                    ->where('post_id', $post->id)
+                    ->update([
+                        'interest_type' => $validatedData['interest_type'],
+                        'updated_at' => now()
+                    ]);
+
+                $message = $validatedData['interest_type'] === 'interested' 
+                    ? 'Post marked as interested successfully' 
+                    : 'Post marked as not interested successfully';
+            } else {
+                // Create new feedback
+                DB::table('post_interest_feedback')->insert([
+                    'user_id' => $user->id,
+                    'post_id' => $post->id,
+                    'post_owner_id' => $post->user_id,
+                    'interest_type' => $validatedData['interest_type'],
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+
+                $message = $validatedData['interest_type'] === 'interested' 
+                    ? 'Post marked as interested successfully' 
+                    : 'Post marked as not interested successfully';
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'post_id' => $post->id,
+                    'post_owner_id' => $post->user_id,
+                    'interest_type' => $validatedData['interest_type'],
+                    'feedback_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update post interest feedback',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 
 
     
-
     public function votePoll(Request $request, $postId)
     {
         try {
@@ -2952,5 +3054,4 @@ class PostController extends Controller
         }
     }
 
- 
 }
