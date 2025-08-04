@@ -2918,12 +2918,254 @@ class PostController extends Controller
         }
     }
 
+    public function hideFriendPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'friend_id' => 'required|integer|exists:users,id',
+                'hide_type' => 'required|in:permanent,30_days'
+            ]);
 
+            $user = Auth::guard('user')->user();
+            
+            // Check if user is friends with the specified friend
+            if (!$user->isFriendsWith($validatedData['friend_id'])) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You can only hide posts from users who are your friends'
+                ], 400);
+            }
+
+            // Prevent hiding own posts
+            if ($validatedData['friend_id'] === $user->id) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You cannot hide your own posts'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            // Calculate expiration date for 30 days hide
+            $expiresAt = null;
+            if ($validatedData['hide_type'] === '30_days') {
+                $expiresAt = Carbon::now()->addDays(30);
+            }
+
+            // Check if hide setting already exists
+            $existingHide = DB::table('hidden_friend_posts')
+                ->where('user_id', $user->id)
+                ->where('friend_id', $validatedData['friend_id'])
+                ->first();
+
+            if ($existingHide) {
+                // Update existing hide setting
+                DB::table('hidden_friend_posts')
+                    ->where('user_id', $user->id)
+                    ->where('friend_id', $validatedData['friend_id'])
+                    ->update([
+                        'hide_type' => $validatedData['hide_type'],
+                        'expires_at' => $expiresAt,
+                        'updated_at' => now()
+                    ]);
+
+                $message = $validatedData['hide_type'] === 'permanent' 
+                    ? 'Posts from this friend hidden permanently' 
+                    : 'Posts from this friend hidden for 30 days';
+            } else {
+                // Create new hide setting
+                DB::table('hidden_friend_posts')->insert([
+                    'user_id' => $user->id,
+                    'friend_id' => $validatedData['friend_id'],
+                    'hide_type' => $validatedData['hide_type'],
+                    'expires_at' => $expiresAt,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+
+                $message = $validatedData['hide_type'] === 'permanent' 
+                    ? 'Posts from this friend hidden permanently' 
+                    : 'Posts from this friend hidden for 30 days';
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'friend_id' => $validatedData['friend_id'],
+                    'hide_type' => $validatedData['hide_type'],
+                    'expires_at' => $expiresAt,
+                    'hidden_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to hide friend posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function unhideFriendPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'friend_id' => 'required|integer|exists:users,id'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            DB::beginTransaction();
+
+            // Delete the hide setting
+            $deletedCount = DB::table('hidden_friend_posts')
+                ->where('user_id', $user->id)
+                ->where('friend_id', $validatedData['friend_id'])
+                ->delete();
+
+            if ($deletedCount === 0) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No hidden posts found for this friend'
+                ], 404);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Posts from this friend are now visible',
+                'data' => [
+                    'friend_id' => $validatedData['friend_id'],
+                    'unhidden_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to unhide friend posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getHiddenFriendPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            // Get hidden friend posts with pagination
+            $hiddenPosts = DB::table('hidden_friend_posts')
+                ->join('users', 'hidden_friend_posts.friend_id', '=', 'users.id')
+                ->where('hidden_friend_posts.user_id', $user->id)
+                ->where(function($query) {
+                    $query->where('hidden_friend_posts.hide_type', 'permanent')
+                          ->orWhere(function($q) {
+                              $q->where('hidden_friend_posts.hide_type', '30_days')
+                                ->where('hidden_friend_posts.expires_at', '>', now());
+                          });
+                })
+                ->select(
+                    'hidden_friend_posts.*',
+                    'users.first_name',
+                    'users.last_name',
+                    'users.email',
+                    'users.profile_picture'
+                )
+                ->orderBy('hidden_friend_posts.created_at', 'desc')
+                ->paginate($perPage);
+
+            // Map the results
+            $mappedHiddenPosts = $hiddenPosts->getCollection()->map(function ($hiddenPost) {
+                return [
+                    'friend_id' => $hiddenPost->friend_id,
+                    'friend_name' => $hiddenPost->first_name . ' ' . $hiddenPost->last_name,
+                    'friend_email' => $hiddenPost->email,
+                    'friend_profile_picture' => $hiddenPost->profile_picture ? config('app.url') . asset('storage/' . $hiddenPost->profile_picture) : null,
+                    'hide_type' => $hiddenPost->hide_type,
+                    'expires_at' => $hiddenPost->expires_at,
+                    'is_expired' => $hiddenPost->expires_at ? Carbon::parse($hiddenPost->expires_at)->isPast() : false,
+                    'hidden_at' => $hiddenPost->created_at,
+                    'updated_at' => $hiddenPost->updated_at
+                ];
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Hidden friend posts retrieved successfully',
+                'data' => [
+                    'hidden_posts' => $mappedHiddenPosts,
+                    'pagination' => [
+                        'current_page' => $hiddenPosts->currentPage(),
+                        'last_page' => $hiddenPosts->lastPage(),
+                        'per_page' => $hiddenPosts->perPage(),
+                        'total' => $hiddenPosts->total(),
+                        'from' => $hiddenPosts->firstItem(),
+                        'to' => $hiddenPosts->lastItem(),
+                        'has_more_pages' => $hiddenPosts->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve hidden friend posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
 
 
     
+
     public function votePoll(Request $request, $postId)
     {
         try {
