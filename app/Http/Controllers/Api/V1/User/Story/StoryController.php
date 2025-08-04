@@ -51,17 +51,17 @@ class StoryController extends Controller
              'privacy' => $story->privacy,
              'specific_friends' => $story->specific_friends,
              'friend_except' => $story->friend_except,
-             'text_elements' => $story->text_elements,
+             'text_elements' => $this->convertNumericValuesToDouble($story->text_elements),
              'background_color' => $story->background_color,
-             'mentions_elements' => $story->mentions_elements,
-             'clock_element' => $story->clock_element,
-             'feeling_element' => $story->feeling_element,
-             'temperature_element' => $story->temperature_element,
-             'audio_element' => $story->audio_element,
-             'poll_element' => $story->poll_element,
-             'location_element' => $story->location_element,
-             'drawing_elements' => $story->drawing_elements,
-             'gif_element' => $story->gif_element,
+             'mentions_elements' => $this->convertNumericValuesToDouble($story->mentions_elements),
+             'clock_element' => $this->convertNumericValuesToDouble($story->clock_element),
+             'feeling_element' => $this->convertNumericValuesToDouble($story->feeling_element),
+             'temperature_element' => $this->convertNumericValuesToDouble($story->temperature_element),
+             'audio_element' => $this->convertNumericValuesToDouble($story->audio_element),
+             'poll_element' => $this->convertNumericValuesToDouble($story->poll_element),
+             'location_element' => $this->convertNumericValuesToDouble($story->location_element),
+             'drawing_elements' => $this->convertNumericValuesToDouble($story->drawing_elements),
+             'gif_element' => $this->convertNumericValuesToDouble($story->gif_element),
              'is_video_muted' => $story->is_video_muted,
              'is_story_muted_notification' => $story->is_story_muted_notification,
              'media' => $story->media->map(function ($media) {
@@ -69,16 +69,16 @@ class StoryController extends Controller
                      'id' => $media->id,
                      'type' => $media->type,
                      'url' => $media->full_url,
-                     'order' => $media->order,
-                     'rotate_angle' => $media->rotate_angle,
-                     'scale' => $media->scale,
-                     'dx' => $media->dx,
-                     'dy' => $media->dy,
+                     'order' => (float) $media->order,
+                     'rotate_angle' => (float) $media->rotate_angle,
+                     'scale' => (float) $media->scale,
+                     'dx' => (float) $media->dx,
+                     'dy' => (float) $media->dy,
                      'metadata' => $media->metadata
                  ];
              }),
-             'views_count' => $story->views_count,
-             'replies_count' => $story->replies_count,
+             'views_count' => (float) $story->views_count,
+             'replies_count' => (float) $story->replies_count,
              'has_viewed' => $story->hasBeenViewedBy($currentUser->id),
              'has_voted' => $story->hasVotedBy($currentUser->id),
              'poll_results' => $story->poll_results,
@@ -131,6 +131,29 @@ class StoryController extends Controller
         return round($size, 2) . ' ' . $units[$power];
     }
 
+    private function convertNumericValuesToDouble($data)
+    {
+        if (is_null($data)) {
+            return null;
+        }
+
+        if (is_array($data)) {
+            $converted = [];
+            foreach ($data as $key => $value) {
+                if (is_array($value)) {
+                    $converted[$key] = $this->convertNumericValuesToDouble($value);
+                } elseif (is_numeric($value)) {
+                    $converted[$key] = (float) $value;
+                } else {
+                    $converted[$key] = $value;
+                }
+            }
+            return $converted;
+        }
+
+        return $data;
+    }
+
     private function mapStoryPollVote($vote, $user = null)
     {
         return [
@@ -157,6 +180,7 @@ class StoryController extends Controller
                 'text_elements.*.text_properties' => 'nullable|array',
                 'text_elements.*.text_properties.color' => 'nullable|string|max:7',
                 'text_elements.*.text_properties.font_type' => 'nullable|string|max:50',
+                'text_elements.*.text_properties.font_size' => 'nullable|numeric|min:8|max:72',
                 'text_elements.*.text_properties.bold' => 'nullable|boolean',
                 'text_elements.*.text_properties.italic' => 'nullable|boolean',
                 'text_elements.*.text_properties.underline' => 'nullable|boolean',
@@ -174,6 +198,7 @@ class StoryController extends Controller
                 'text_element.text_properties' => 'nullable|array',
                 'text_element.text_properties.color' => 'nullable|string|max:7',
                 'text_element.text_properties.font_type' => 'nullable|string|max:50',
+                'text_element.text_properties.font_size' => 'nullable|numeric|min:8|max:72',
                 'text_element.text_properties.bold' => 'nullable|boolean',
                 'text_element.text_properties.italic' => 'nullable|boolean',
                 'text_element.text_properties.underline' => 'nullable|boolean',
