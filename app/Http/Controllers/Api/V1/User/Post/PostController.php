@@ -2826,6 +2826,99 @@ class PostController extends Controller
         }
     }
 
+    public function togglePostNotifications(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'notifications_enabled' => 'required|boolean'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it belongs to the user
+            $post = Post::where('user_id', $user->id)
+                ->findOrFail($validatedData['post_id']);
+
+            DB::beginTransaction();
+
+            // Update the post's notifications status
+            $post->update(['notifications_enabled' => $validatedData['notifications_enabled']]);
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $validatedData['notifications_enabled'] ? 'Post notifications enabled successfully' : 'Post notifications disabled successfully',
+                'data' => [
+                    'post_id' => $post->id,
+                    'notifications_enabled' => $validatedData['notifications_enabled'],
+                    'updated_at' => $post->updated_at
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update post notifications status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getPostNotificationsStatus(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it belongs to the user
+            $post = Post::where('user_id', $user->id)
+                ->findOrFail($validatedData['post_id']);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Post notifications status retrieved successfully',
+                'data' => [
+                    'post_id' => $post->id,
+                    'notifications_enabled' => (bool) $post->notifications_enabled,
+                    'updated_at' => $post->updated_at
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve post notifications status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
 
 
 
