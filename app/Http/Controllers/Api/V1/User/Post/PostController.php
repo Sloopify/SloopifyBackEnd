@@ -2645,31 +2645,75 @@ class PostController extends Controller
         }
     }
 
-
-
-
-
-
-    
-    public function destroy($id)
+    public function deletePost(Request $request)
     {
         try {
-            $post = Post::where('user_id', Auth::guard('user')->user()->id)->findOrFail($id);
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id'
+            ]);
 
-            // Delete media files
+            $user = Auth::guard('user')->user();
+            
+            // Find the post and ensure it belongs to the user
+            $post = Post::where('user_id', $user->id)
+                ->findOrFail($validatedData['post_id']);
+
+            DB::beginTransaction();
+
+            // Delete media files from storage
             foreach ($post->media as $media) {
-                Storage::disk('public')->delete($media->path);
+                try {
+                    Storage::disk('public')->delete($media->path);
+                } catch (Exception $e) {
+                    // Log the error but don't fail the deletion
+                    \Log::warning('Failed to delete media file: ' . $e->getMessage(), [
+                        'post_id' => $post->id,
+                        'media_id' => $media->id,
+                        'path' => $media->path
+                    ]);
+                }
             }
 
+            // Delete related data (cascade will handle most, but we'll be explicit)
+            $post->media()->delete();
+            $post->poll()->delete();
+            $post->personalOccasion()->delete();
+
+            // Delete from saved posts
+            DB::table('saved_posts')
+                ->where('post_id', $post->id)
+                ->delete();
+
+            // Delete notification settings
+            DB::table('post_notification_settings')
+                ->where('post_id', $post->id)
+                ->delete();
+
+            // Delete the post
             $post->delete();
+
+            DB::commit();
 
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
-                'message' => 'Post deleted successfully'
+                'message' => 'Post deleted successfully',
+                'data' => [
+                    'post_id' => $validatedData['post_id'],
+                    'deleted_at' => now()
+                ]
             ], 200);
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status_code' => 500,
                 'success' => false,
@@ -2678,6 +2722,12 @@ class PostController extends Controller
             ], 500);
         }
     }
+
+
+
+
+
+    
 
     public function votePoll(Request $request, $postId)
     {
