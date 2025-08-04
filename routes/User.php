@@ -154,6 +154,10 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('post-interest' , 'postInterest');
 
+        Route::post('toggle-post-notifications' , 'togglePostNotifications');
+
+        Route::post('get-post-notifications-status' , 'getPostNotificationsStatus');
+
       });
     });
 
