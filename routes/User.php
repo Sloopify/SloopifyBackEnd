@@ -150,6 +150,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('get-post-comments-status' , 'getPostCommentsStatus');
 
+        Route::post('delete-post' , 'deletePost');
+
       });
     });
 
