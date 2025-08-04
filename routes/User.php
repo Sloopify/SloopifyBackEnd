@@ -152,6 +152,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('delete-post' , 'deletePost');
 
+        Route::post('post-interest' , 'postInterest');
+
       });
     });
 
