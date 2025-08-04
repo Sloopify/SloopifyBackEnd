@@ -212,6 +212,8 @@ Route::group(['prefix' => 'api/v1'], function () {
             Route::post('/search-story-poll-results', 'searchStoryPollResults');
 
             Route::post('/get-story-by-id', 'getStoryById');
+
+            Route::post('/get-my-stories', 'getMyStories');
             
             Route::post('/get-stories', 'getStories');
 
