@@ -138,7 +138,6 @@ class PostController extends Controller
         })->values();
     }
 
-
     public function mapUsersDetails($users)
     {
         return $users->map(function ($user) {
@@ -2923,7 +2922,7 @@ class PostController extends Controller
         try {
             $validatedData = $request->validate([
                 'post_id' => 'required|integer|exists:posts,id',
-                'hide_type' => 'required|in:permanent,30_days'
+                'hide_type' => 'required|in:permanent,30_days,unhide'
             ]);
 
             $user = Auth::guard('user')->user();
@@ -2952,6 +2951,37 @@ class PostController extends Controller
             }
 
             DB::beginTransaction();
+
+            // Handle unhide (remove hide setting)
+            if ($validatedData['hide_type'] === 'unhide') {
+                $deletedCount = DB::table('hidden_friend_posts')
+                    ->where('user_id', $user->id)
+                    ->where('friend_id', $post->user_id)
+                    ->where('post_id', $post->id)
+                    ->delete();
+
+                if ($deletedCount === 0) {
+                    return response()->json([
+                        'status_code' => 404,
+                        'success' => false,
+                        'message' => 'No hide setting found for this friend post'
+                    ], 404);
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Friend post unhidden successfully',
+                    'data' => [
+                        'post_id' => $post->id,
+                        'friend_id' => $post->user_id,
+                        'hide_type' => 'unhidden',
+                        'unhidden_at' => now()
+                    ]
+                ], 200);
+            }
 
             // Calculate expiration date for 30 days hide
             $expiresAt = null;
@@ -3598,6 +3628,482 @@ class PostController extends Controller
             ], 500);
         }
     }
+
+    public function suggestedPostInterest(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'interest_type' => 'required|in:interested,not_interested'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $post = Post::approved()->visibleTo($user->id)->findOrFail($validatedData['post_id']);
+
+            // Ensure the post is not from the user themselves
+            if ($post->user_id === $user->id) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You cannot mark your own posts as interested/not interested'
+                ], 400);
+            }
+
+            // Ensure the post is from a non-friend (suggested post)
+            if ($user->isFriendsWith($post->user_id)) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'This function is for suggested posts only. Use postInterest for friend posts.'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            $existingInterest = DB::table('suggested_post_interest_feedback')
+                ->where('user_id', $user->id)
+                ->where('post_id', $post->id)
+                ->first();
+
+            if ($existingInterest) {
+                DB::table('suggested_post_interest_feedback')
+                    ->where('user_id', $user->id)
+                    ->where('post_id', $post->id)
+                    ->update([
+                        'interest_type' => $validatedData['interest_type'],
+                        'updated_at' => now()
+                    ]);
+            } else {
+                DB::table('suggested_post_interest_feedback')->insert([
+                    'user_id' => $user->id,
+                    'post_id' => $post->id,
+                    'post_owner_id' => $post->user_id,
+                    'interest_type' => $validatedData['interest_type'],
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+
+            DB::commit();
+
+            $message = $validatedData['interest_type'] === 'interested' 
+                ? 'Suggested post marked as interested successfully' 
+                : 'Suggested post marked as not interested successfully';
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'post_id' => $post->id,
+                    'post_owner_id' => $post->user_id,
+                    'interest_type' => $validatedData['interest_type'],
+                    'feedback_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to mark suggested post interest',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function hideSuggestedPost(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'hide_type' => 'required|in:permanent,30_days,unhide'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $post = Post::approved()->visibleTo($user->id)->findOrFail($validatedData['post_id']);
+
+            // Ensure the post is not from the user themselves
+            if ($post->user_id === $user->id) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You cannot hide your own posts'
+                ], 400);
+            }
+
+            // Ensure the post is from a non-friend (suggested post)
+            if ($user->isFriendsWith($post->user_id)) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'This function is for suggested posts only. Use hideSpecificFriendPost for friend posts.'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            // Handle unhide (remove hide setting)
+            if ($validatedData['hide_type'] === 'unhide') {
+                $deletedCount = DB::table('hidden_suggested_posts')
+                    ->where('user_id', $user->id)
+                    ->where('post_id', $post->id)
+                    ->delete();
+
+                if ($deletedCount === 0) {
+                    return response()->json([
+                        'status_code' => 404,
+                        'success' => false,
+                        'message' => 'No hide setting found for this suggested post'
+                    ], 404);
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Suggested post unhidden successfully',
+                    'data' => [
+                        'post_id' => $post->id,
+                        'post_owner_id' => $post->user_id,
+                        'hide_type' => 'unhidden',
+                        'unhidden_at' => now()
+                    ]
+                ], 200);
+            }
+
+            $expiresAt = null;
+            if ($validatedData['hide_type'] === '30_days') {
+                $expiresAt = Carbon::now()->addDays(30);
+            }
+
+            // Check if hide setting already exists for this specific post
+            $existingHide = DB::table('hidden_suggested_posts')
+                ->where('user_id', $user->id)
+                ->where('post_id', $post->id)
+                ->first();
+
+            if ($existingHide) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'This suggested post is already hidden'
+                ], 400);
+            }
+
+            // Create new hide setting for specific suggested post
+            DB::table('hidden_suggested_posts')->insert([
+                'user_id' => $user->id,
+                'post_id' => $post->id,
+                'post_owner_id' => $post->user_id,
+                'hide_type' => $validatedData['hide_type'],
+                'expires_at' => $expiresAt,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            DB::commit();
+
+            $message = $validatedData['hide_type'] === 'permanent' 
+                ? 'Suggested post hidden permanently' 
+                : 'Suggested post hidden for 30 days';
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'post_id' => $post->id,
+                    'post_owner_id' => $post->user_id,
+                    'hide_type' => $validatedData['hide_type'],
+                    'expires_at' => $expiresAt,
+                    'hidden_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to hide suggested post',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function hideSuggestedUserPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'user_id' => 'required|integer|exists:users,id',
+                'hide_type' => 'required|in:permanent,30_days'
+            ]);
+
+            $user = Auth::guard('user')->user();
+
+            // Ensure the user_id is not the user's own ID
+            if ($validatedData['user_id'] === $user->id) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You cannot hide your own posts'
+                ], 400);
+            }
+
+            // Ensure the target user is not a friend (suggested user)
+            if ($user->isFriendsWith($validatedData['user_id'])) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'This function is for suggested users only. Use hideFriendPosts for friends.'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            $expiresAt = null;
+            if ($validatedData['hide_type'] === '30_days') {
+                $expiresAt = Carbon::now()->addDays(30);
+            }
+
+            // Check if hide setting already exists for this user
+            $existingHide = DB::table('hidden_suggested_users')
+                ->where('user_id', $user->id)
+                ->where('suggested_user_id', $validatedData['user_id'])
+                ->first();
+
+            if ($existingHide) {
+                // Update existing hide setting
+                DB::table('hidden_suggested_users')
+                    ->where('user_id', $user->id)
+                    ->where('suggested_user_id', $validatedData['user_id'])
+                    ->update([
+                        'hide_type' => $validatedData['hide_type'],
+                        'expires_at' => $expiresAt,
+                        'updated_at' => now()
+                    ]);
+            } else {
+                // Create new hide setting
+                DB::table('hidden_suggested_users')->insert([
+                    'user_id' => $user->id,
+                    'suggested_user_id' => $validatedData['user_id'],
+                    'hide_type' => $validatedData['hide_type'],
+                    'expires_at' => $expiresAt,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+
+            DB::commit();
+
+            $message = $validatedData['hide_type'] === 'permanent' 
+                ? 'All posts from this suggested user hidden permanently' 
+                : 'All posts from this suggested user hidden for 30 days';
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'suggested_user_id' => $validatedData['user_id'],
+                    'hide_type' => $validatedData['hide_type'],
+                    'expires_at' => $expiresAt,
+                    'hidden_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to hide suggested user posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function unhideSuggestedUserPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'user_id' => 'required|integer|exists:users,id'
+            ]);
+
+            $user = Auth::guard('user')->user();
+
+            DB::beginTransaction();
+
+            $deletedCount = DB::table('hidden_suggested_users')
+                ->where('user_id', $user->id)
+                ->where('suggested_user_id', $validatedData['user_id'])
+                ->delete();
+
+            if ($deletedCount === 0) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No hide setting found for this suggested user'
+                ], 404);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Posts from this suggested user are now visible',
+                'data' => [
+                    'suggested_user_id' => $validatedData['user_id'],
+                    'unhidden_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to unhide suggested user posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getHiddenSuggestedPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'hide_type' => 'nullable|in:permanent,30_days,all'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $hideType = $validatedData['hide_type'] ?? 'all';
+
+            // Get hidden suggested posts with pagination
+            $hiddenPosts = DB::table('hidden_suggested_posts')
+                ->join('posts', 'hidden_suggested_posts.post_id', '=', 'posts.id')
+                ->join('users', 'posts.user_id', '=', 'users.id')
+                ->where('hidden_suggested_posts.user_id', $user->id)
+                ->where(function($query) {
+                    $query->where('hidden_suggested_posts.hide_type', 'permanent')
+                          ->orWhere(function($q) {
+                              $q->where('hidden_suggested_posts.hide_type', '30_days')
+                                ->where('hidden_suggested_posts.expires_at', '>', now());
+                          });
+                });
+
+            // Filter by hide type if specified
+            if ($hideType !== 'all') {
+                $hiddenPosts->where('hidden_suggested_posts.hide_type', $hideType);
+            }
+
+            $hiddenPosts = $hiddenPosts->select(
+                    'hidden_suggested_posts.*',
+                    'posts.content',
+                    'posts.type',
+                    'posts.privacy',
+                    'posts.created_at as post_created_at',
+                    'users.first_name',
+                    'users.last_name',
+                    'users.email'
+                )
+                ->orderBy('hidden_suggested_posts.created_at', 'desc')
+                ->paginate($perPage);
+
+            // Map the results
+            $mappedHiddenPosts = $hiddenPosts->getCollection()->map(function ($hiddenPost) {
+                return [
+                    'post_id' => $hiddenPost->post_id,
+                    'post_owner_id' => $hiddenPost->post_owner_id,
+                    'post_owner_name' => $hiddenPost->first_name . ' ' . $hiddenPost->last_name,
+                    'post_owner_email' => $hiddenPost->email,
+                    'post_content' => $hiddenPost->content,
+                    'post_type' => $hiddenPost->type,
+                    'post_privacy' => $hiddenPost->privacy,
+                    'post_created_at' => $hiddenPost->post_created_at,
+                    'hide_type' => $hiddenPost->hide_type,
+                    'expires_at' => $hiddenPost->expires_at,
+                    'is_expired' => $hiddenPost->expires_at ? Carbon::parse($hiddenPost->expires_at)->isPast() : false,
+                    'hidden_at' => $hiddenPost->created_at,
+                    'updated_at' => $hiddenPost->updated_at
+                ];
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Hidden suggested posts retrieved successfully',
+                'data' => [
+                    'hidden_posts' => $mappedHiddenPosts,
+                    'hide_type_filter' => $hideType,
+                    'pagination' => [
+                        'current_page' => $hiddenPosts->currentPage(),
+                        'last_page' => $hiddenPosts->lastPage(),
+                        'per_page' => $hiddenPosts->perPage(),
+                        'total' => $hiddenPosts->total(),
+                        'from' => $hiddenPosts->firstItem(),
+                        'to' => $hiddenPosts->lastItem(),
+                        'has_more_pages' => $hiddenPosts->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve hidden suggested posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 

@@ -172,6 +172,16 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('get-friend-notification-restrictions' , 'getFriendNotificationRestrictions');
 
+        Route::post('suggested-post-interest' , 'suggestedPostInterest');
+
+        Route::post('hide-suggested-user-post' , 'hideSuggestedPost');
+
+        Route::post('hide-suggested-user-posts' , 'hideSuggestedUserPosts');
+
+        Route::post('unhide-suggested-user-post' , 'unhideSuggestedUserPosts');
+
+        Route::post('get-hidden-suggested-posts' , 'getHiddenSuggestedPosts');
+
       });
     });
 
