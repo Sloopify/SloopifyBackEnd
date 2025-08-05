@@ -15,16 +15,18 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('friend_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('post_id')->nullable()->constrained('posts')->onDelete('cascade');
             $table->enum('hide_type', ['permanent', '30_days']);
             $table->timestamp('expires_at')->nullable();
             $table->timestamps();
             
-            // Ensure one hide setting per user per friend
-            $table->unique(['user_id', 'friend_id']);
+            // Ensure one hide setting per user per friend per post
+            $table->unique(['user_id', 'friend_id', 'post_id']);
             
             // Indexes for efficient queries
             $table->index(['user_id', 'hide_type']);
             $table->index(['friend_id', 'hide_type']);
+            $table->index(['user_id', 'post_id']);
             $table->index(['expires_at']);
         });
     }
