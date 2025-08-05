@@ -1896,13 +1896,13 @@ class PostController extends Controller
             // Check if poll type has any mentions
             if ($post->type === 'poll') {
                 if ($hasFeeling || $hasActivity || $hasPlace || $hasFriends) {
-                    return response()->json([
-                        'status_code' => 422,
-                        'success' => false,
-                        'message' => 'Validation failed',
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Validation failed',
                         'errors' => [
                             'mentions' => ['Poll posts cannot have mentions, feelings, activities, or location.']]
-                    ], 422);
+                ], 422);
                 }
             }
             
@@ -2662,7 +2662,7 @@ class PostController extends Controller
             // Delete media files from storage
             foreach ($post->media as $media) {
                 try {
-                    Storage::disk('public')->delete($media->path);
+                Storage::disk('public')->delete($media->path);
                 } catch (Exception $e) {
                     // Log the error but don't fail the deletion
                     \Log::warning('Failed to delete media file: ' . $e->getMessage(), [
