@@ -3365,11 +3365,247 @@ class PostController extends Controller
         }
     }
 
-   
+    public function restrictFriendNotifications(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'friend_id' => 'required|integer|exists:users,id',
+                'restriction_type' => 'required|in:30_days,permanent,unrestrict',
+                'mute_reactions' => 'nullable|boolean',
+                'mute_comments' => 'nullable|boolean',
+                'mute_shares' => 'nullable|boolean',
+                'mute_all' => 'nullable|boolean'
+            ]);
+
+            $user = Auth::guard('user')->user();
+
+            // Ensure the friend_id is not the user's own ID
+            if ($validatedData['friend_id'] === $user->id) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You cannot restrict notifications from yourself'
+                ], 400);
+            }
+
+            // Check if user is friends with the specified friend
+            if (!$user->isFriendsWith($validatedData['friend_id'])) {
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
+                    'message' => 'You can only restrict notifications from your friends'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            // Handle unrestrict (remove restriction)
+            if ($validatedData['restriction_type'] === 'unrestrict') {
+                $deletedCount = DB::table('friend_notification_restrictions')
+                    ->where('user_id', $user->id)
+                    ->where('friend_id', $validatedData['friend_id'])
+                    ->delete();
+
+                if ($deletedCount === 0) {
+                    return response()->json([
+                        'status_code' => 404,
+                        'success' => false,
+                        'message' => 'No notification restriction found for this friend'
+                    ], 404);
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Notification restriction removed successfully',
+                    'data' => [
+                        'friend_id' => $validatedData['friend_id'],
+                        'restriction_type' => 'unrestricted',
+                        'unrestricted_at' => now()
+                    ]
+                ], 200);
+            }
+
+            // Calculate expiration date for 30 days restriction
+            $expiresAt = null;
+            if ($validatedData['restriction_type'] === '30_days') {
+                $expiresAt = Carbon::now()->addDays(30);
+            }
+
+            // Prepare restriction data
+            $restrictionData = [
+                'user_id' => $user->id,
+                'friend_id' => $validatedData['friend_id'],
+                'restriction_type' => $validatedData['restriction_type'],
+                'mute_reactions' => $validatedData['mute_reactions'] ?? false,
+                'mute_comments' => $validatedData['mute_comments'] ?? false,
+                'mute_shares' => $validatedData['mute_shares'] ?? false,
+                'mute_all' => $validatedData['mute_all'] ?? false,
+                'expires_at' => $expiresAt,
+                'updated_at' => now()
+            ];
+
+            // Check if restriction already exists
+            $existingRestriction = DB::table('friend_notification_restrictions')
+                ->where('user_id', $user->id)
+                ->where('friend_id', $validatedData['friend_id'])
+                ->first();
+
+            if ($existingRestriction) {
+                // Update existing restriction
+                DB::table('friend_notification_restrictions')
+                    ->where('user_id', $user->id)
+                    ->where('friend_id', $validatedData['friend_id'])
+                    ->update($restrictionData);
+            } else {
+                // Create new restriction
+                $restrictionData['created_at'] = now();
+                DB::table('friend_notification_restrictions')->insert($restrictionData);
+            }
+
+            DB::commit();
+
+            $message = $validatedData['restriction_type'] === 'permanent' 
+                ? 'Notifications from this friend restricted permanently' 
+                : 'Notifications from this friend restricted for 30 days';
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'friend_id' => $validatedData['friend_id'],
+                    'restriction_type' => $validatedData['restriction_type'],
+                    'mute_reactions' => $restrictionData['mute_reactions'],
+                    'mute_comments' => $restrictionData['mute_comments'],
+                    'mute_shares' => $restrictionData['mute_shares'],
+                    'mute_all' => $restrictionData['mute_all'],
+                    'expires_at' => $expiresAt,
+                    'restricted_at' => now()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to restrict friend notifications',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getFriendNotificationRestrictions(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'restriction_type' => 'nullable|in:30_days,permanent,all'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $restrictionType = $validatedData['restriction_type'] ?? 'all';
+
+            // Get notification restrictions with pagination
+            $restrictions = DB::table('friend_notification_restrictions')
+                ->join('users', 'friend_notification_restrictions.friend_id', '=', 'users.id')
+                ->where('friend_notification_restrictions.user_id', $user->id)
+                ->where(function($query) {
+                    $query->where('friend_notification_restrictions.restriction_type', 'permanent')
+                          ->orWhere(function($q) {
+                              $q->where('friend_notification_restrictions.restriction_type', '30_days')
+                                ->where('friend_notification_restrictions.expires_at', '>', now());
+                          });
+                });
+
+            // Filter by restriction type if specified
+            if ($restrictionType !== 'all') {
+                $restrictions->where('friend_notification_restrictions.restriction_type', $restrictionType);
+            }
+
+            $restrictions = $restrictions->select(
+                    'friend_notification_restrictions.*',
+                    'users.first_name',
+                    'users.last_name',
+                    'users.email'
+                )
+                ->orderBy('friend_notification_restrictions.created_at', 'desc')
+                ->paginate($perPage);
+
+            // Map the results
+            $mappedRestrictions = $restrictions->getCollection()->map(function ($restriction) {
+                return [
+                    'friend_id' => $restriction->friend_id,
+                    'friend_name' => $restriction->first_name . ' ' . $restriction->last_name,
+                    'friend_email' => $restriction->email,
+                    'restriction_type' => $restriction->restriction_type,
+                    'mute_reactions' => (bool) $restriction->mute_reactions,
+                    'mute_comments' => (bool) $restriction->mute_comments,
+                    'mute_shares' => (bool) $restriction->mute_shares,
+                    'mute_all' => (bool) $restriction->mute_all,
+                    'expires_at' => $restriction->expires_at,
+                    'is_expired' => $restriction->expires_at ? Carbon::parse($restriction->expires_at)->isPast() : false,
+                    'restricted_at' => $restriction->created_at,
+                    'updated_at' => $restriction->updated_at
+                ];
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Friend notification restrictions retrieved successfully',
+                'data' => [
+                    'restrictions' => $mappedRestrictions,
+                    'restriction_type_filter' => $restrictionType,
+                    'pagination' => [
+                        'current_page' => $restrictions->currentPage(),
+                        'last_page' => $restrictions->lastPage(),
+                        'per_page' => $restrictions->perPage(),
+                        'total' => $restrictions->total(),
+                        'from' => $restrictions->firstItem(),
+                        'to' => $restrictions->lastItem(),
+                        'has_more_pages' => $restrictions->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve friend notification restrictions',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
 
-    
+
+
+
+
+
 
     public function votePoll(Request $request, $postId)
     {
