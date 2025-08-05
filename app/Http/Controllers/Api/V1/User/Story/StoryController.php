@@ -42,26 +42,35 @@ class StoryController extends Controller
     }
 
     private function mapStory($story, $currentUser = null)
-     {
+    {
          $currentUser = $currentUser ?: Auth::guard('user')->user();
          
+         // Helper function to decode JSON and convert numeric values
+         $decodeAndConvert = function($data) {
+             if (is_string($data)) {
+                 $decoded = json_decode($data, true);
+                 return $this->convertNumericValuesToDouble($decoded);
+             }
+             return $this->convertNumericValuesToDouble($data);
+         };
+           
          return [
              'id' => $story->id,
              'user' => app(AuthController::class)->mapUserDetails($story->user),
              'privacy' => $story->privacy,
              'specific_friends' => $story->specific_friends,
              'friend_except' => $story->friend_except,
-             'text_elements' => $this->convertNumericValuesToDouble($story->text_elements),
-             'background_color' => $story->background_color,
-             'mentions_elements' => $this->convertNumericValuesToDouble($story->mentions_elements),
-             'clock_element' => $this->convertNumericValuesToDouble($story->clock_element),
-             'feeling_element' => $this->convertNumericValuesToDouble($story->feeling_element),
-             'temperature_element' => $this->convertNumericValuesToDouble($story->temperature_element),
-             'audio_element' => $this->convertNumericValuesToDouble($story->audio_element),
-             'poll_element' => $this->convertNumericValuesToDouble($story->poll_element),
-             'location_element' => $this->convertNumericValuesToDouble($story->location_element),
-             'drawing_elements' => $this->convertNumericValuesToDouble($story->drawing_elements),
-             'gif_element' => $this->convertNumericValuesToDouble($story->gif_element),
+             'text_elements' => $decodeAndConvert($story->text_elements),
+             'background_color' => is_string($story->background_color) ? json_decode($story->background_color, true) : $story->background_color,
+             'mentions_elements' => $decodeAndConvert($story->mentions_elements),
+             'clock_element' => $decodeAndConvert($story->clock_element),
+             'feeling_element' => $decodeAndConvert($story->feeling_element),
+             'temperature_element' => $decodeAndConvert($story->temperature_element),
+             'audio_element' => $decodeAndConvert($story->audio_element),
+             'poll_element' => $decodeAndConvert($story->poll_element),
+             'location_element' => $decodeAndConvert($story->location_element),
+             'drawing_elements' => $decodeAndConvert($story->drawing_elements),
+             'gif_element' => $decodeAndConvert($story->gif_element),
              'is_video_muted' => $story->is_video_muted,
              'is_story_muted_notification' => $story->is_story_muted_notification,
              'media' => $story->media->map(function ($media) {
@@ -77,8 +86,8 @@ class StoryController extends Controller
                      'metadata' => $media->metadata
                  ];
              }),
-             'views_count' => (float) $story->views_count,
-             'replies_count' => (float) $story->replies_count,
+             'views_count' => $story->views_count,
+             'replies_count' => $story->replies_count,
              'has_viewed' => $story->hasBeenViewedBy($currentUser->id),
              'has_voted' => $story->hasVotedBy($currentUser->id),
              'poll_results' => $story->poll_results,
@@ -138,12 +147,38 @@ class StoryController extends Controller
         }
 
         if (is_array($data)) {
+            // Convert array to JSON with preserved zero fractions, then decode back
+            $jsonString = json_encode($data, JSON_PRESERVE_ZERO_FRACTION);
+            $decoded = json_decode($jsonString, true);
+            
+            // Recursively process the decoded data to ensure all numeric values are floats
+            return $this->forceFloatValues($decoded);
+        }
+
+        return $data;
+    }
+
+    private function forceFloatValues($data)
+    {
+        if (is_null($data)) {
+            return null;
+        }
+
+        if (is_array($data)) {
             $converted = [];
             foreach ($data as $key => $value) {
                 if (is_array($value)) {
-                    $converted[$key] = $this->convertNumericValuesToDouble($value);
+                    $converted[$key] = $this->forceFloatValues($value);
                 } elseif (is_numeric($value)) {
-                    $converted[$key] = (float) $value;
+                    // Skip converting IDs and other fields that should remain integers
+                    if ($this->shouldKeepAsInteger($key)) {
+                        $converted[$key] = (int) $value;
+                    } else {
+                        // Force to float and ensure it stays as float
+                        $floatValue = (float) $value;
+                        // Add a tiny amount to ensure it's treated as float in JSON
+                        $converted[$key] = $floatValue + 0.0;
+                    }
                 } else {
                     $converted[$key] = $value;
                 }
@@ -152,6 +187,18 @@ class StoryController extends Controller
         }
 
         return $data;
+    }
+
+    private function shouldKeepAsInteger($key)
+    {
+        // Fields that should remain as integers
+        $integerFields = [
+            'id', 'user_id', 'story_id', 'feeling_id', 'audio_id', 'poll_id',
+            'option_id', 'viewer_id', 'reply_id', 'vote_id', 'place_id',
+            'weather_code', 'votes', 'total_votes', 'percentage' , 'views_count' , 'replies_count'
+        ];
+
+        return in_array($key, $integerFields);
     }
 
     private function mapStoryPollVote($vote, $user = null)
@@ -389,32 +436,32 @@ class StoryController extends Controller
             // Handle text elements (convert single text_element to array for consistency)
             $textElements = null;
             if (!empty($validatedData['text_elements'])) {
-                $textElements = $validatedData['text_elements'];
+                $textElements = $this->convertNumericValuesToDouble($validatedData['text_elements']);
             } elseif (!empty($validatedData['text_element'])) {
-                $textElements = [$validatedData['text_element']];
+                $textElements = [$this->convertNumericValuesToDouble($validatedData['text_element'])];
             }
 
-            // Create story
-            $story = Story::create([
-                'user_id' => $user->id,
-                'privacy' => $validatedData['privacy'],
-                'specific_friends' => $validatedData['privacy'] === 'specific_friends' ? ($validatedData['specific_friends'] ?? null) : null,
-                'friend_except' => $validatedData['privacy'] === 'friend_except' ? ($validatedData['friend_except'] ?? null) : null,
-                'text_elements' => $textElements,
-                'background_color' => $validatedData['background_color'] ?? null,
-                'mentions_elements' => $validatedData['mentions_elements'] ?? null,
-                'clock_element' => $validatedData['clock_element'] ?? null,
-                'feeling_element' => $validatedData['feeling_element'] ?? null,
-                'temperature_element' => $validatedData['temperature_element'] ?? null,
-                'audio_element' => $validatedData['audio_element'] ?? null,
-                'poll_element' => $validatedData['poll_element'] ?? null,
-                'location_element' => $validatedData['location_element'] ?? null,
-                'drawing_elements' => $validatedData['drawing_elements'] ?? null,
-                'gif_element' => $validatedData['gif_element'] ?? null,
-                'is_video_muted' => $validatedData['is_video_muted'] ?? false,
-                'expires_at' => Carbon::now()->addHours(24),
-                'status' => 'active'
-            ]);
+            // Create story with manual JSON encoding to preserve doubles
+            $story = new Story();
+            $story->user_id = $user->id;
+            $story->privacy = $validatedData['privacy'];
+            $story->specific_friends = $validatedData['privacy'] === 'specific_friends' ? ($validatedData['specific_friends'] ?? null) : null;
+            $story->friend_except = $validatedData['privacy'] === 'friend_except' ? ($validatedData['friend_except'] ?? null) : null;
+            $story->text_elements = json_encode($textElements, JSON_PRESERVE_ZERO_FRACTION);
+            $story->background_color = isset($validatedData['background_color']) ? json_encode($validatedData['background_color'], JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->mentions_elements = isset($validatedData['mentions_elements']) ? json_encode($this->convertNumericValuesToDouble($validatedData['mentions_elements']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->clock_element = isset($validatedData['clock_element']) ? json_encode($this->convertNumericValuesToDouble($validatedData['clock_element']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->feeling_element = isset($validatedData['feeling_element']) ? json_encode($this->convertNumericValuesToDouble($validatedData['feeling_element']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->temperature_element = isset($validatedData['temperature_element']) ? json_encode($this->convertNumericValuesToDouble($validatedData['temperature_element']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->audio_element = isset($validatedData['audio_element']) ? json_encode($this->convertNumericValuesToDouble($validatedData['audio_element']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->poll_element = isset($validatedData['poll_element']) ? json_encode($this->convertNumericValuesToDouble($validatedData['poll_element']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->location_element = isset($validatedData['location_element']) ? json_encode($this->convertNumericValuesToDouble($validatedData['location_element']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->drawing_elements = isset($validatedData['drawing_elements']) ? json_encode($this->convertNumericValuesToDouble($validatedData['drawing_elements']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->gif_element = isset($validatedData['gif_element']) ? json_encode($this->convertNumericValuesToDouble($validatedData['gif_element']), JSON_PRESERVE_ZERO_FRACTION) : null;
+            $story->is_video_muted = $validatedData['is_video_muted'] ?? false;
+            $story->expires_at = Carbon::now()->addHours(24);
+            $story->status = 'active';
+            $story->save();
 
             // Handle media uploads
             if (!empty($validatedData['media'])) {
@@ -426,12 +473,14 @@ class StoryController extends Controller
             // Load relationships for response
             $story->load(['user', 'media']);
 
-            return response()->json([
+            $responseData = [
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Story created successfully',
                 'data' => $this->mapStory($story)
-            ], 200);
+            ];
+
+            return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
 
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -1109,12 +1158,14 @@ class StoryController extends Controller
                  ->visibleTo($user->id)
                  ->findOrFail($validatedData['story_id']);
 
-             return response()->json([
-                 'status_code' => 200,
-                 'success' => true,
-                 'message' => 'Story retrieved successfully',
-                 'data' => $this->mapStory($story, $user)
-             ], 200);
+                         $responseData = [
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Story retrieved successfully',
+                'data' => $this->mapStory($story, $user)
+            ];
+
+            return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
 
          } catch (ValidationException $e) {
              return response()->json([
@@ -1167,23 +1218,25 @@ class StoryController extends Controller
                  ];
              })->values();
  
-             return response()->json([
-                 'status_code' => 200,
-                 'success' => true,
-                 'message' => 'Stories retrieved successfully',
-                 'data' => [
-                     'stories_by_user' => $groupedStories,
-                     'pagination' => [
-                         'current_page' => $stories->currentPage(),
-                         'last_page' => $stories->lastPage(),
-                         'per_page' => $stories->perPage(),
-                         'total' => $stories->total(),
-                         'from' => $stories->firstItem(),
-                         'to' => $stories->lastItem(),
-                         'has_more_pages' => $stories->hasMorePages()
-                     ]
-                 ]
-             ], 200);
+                         $responseData = [
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Stories retrieved successfully',
+                'data' => [
+                    'stories_by_user' => $groupedStories,
+                    'pagination' => [
+                        'current_page' => $stories->currentPage(),
+                        'last_page' => $stories->lastPage(),
+                        'per_page' => $stories->perPage(),
+                        'total' => $stories->total(),
+                        'from' => $stories->firstItem(),
+                        'to' => $stories->lastItem(),
+                        'has_more_pages' => $stories->hasMorePages()
+                    ]
+                ]
+            ];
+
+            return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
  
          } catch (ValidationException $e) {
              return response()->json([
@@ -1246,25 +1299,27 @@ class StoryController extends Controller
                  return $storyData;
              });
 
-             return response()->json([
-                 'status_code' => 200,
-                 'success' => true,
-                 'message' => 'User stories retrieved successfully',
-                 'data' => [
-                     'stories' => $mappedStories,
-                     'user' => app(AuthController::class)->mapUserDetails(User::find($targetUserId)),
-                     'total_stories' => $stories->total()
-                 ],
-                 'pagination' => [
-                     'current_page' => $stories->currentPage(),
-                     'last_page' => $stories->lastPage(),
-                     'per_page' => $stories->perPage(),
-                     'total' => $stories->total(),
-                     'from' => $stories->firstItem(),
-                     'to' => $stories->lastItem(),
-                     'has_more_pages' => $stories->hasMorePages()
-                 ]
-             ], 200);
+                         $responseData = [
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'User stories retrieved successfully',
+                'data' => [
+                    'stories' => $mappedStories,
+                    'user' => app(AuthController::class)->mapUserDetails(User::find($targetUserId)),
+                    'total_stories' => $stories->total()
+                ],
+                'pagination' => [
+                    'current_page' => $stories->currentPage(),
+                    'last_page' => $stories->lastPage(),
+                    'per_page' => $stories->perPage(),
+                    'total' => $stories->total(),
+                    'from' => $stories->firstItem(),
+                    'to' => $stories->lastItem(),
+                    'has_more_pages' => $stories->hasMorePages()
+                ]
+            ];
+
+            return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
 
          } catch (ValidationException $e) {
              return response()->json([
@@ -1316,26 +1371,28 @@ class StoryController extends Controller
                  return $storyData;
              });
 
-             return response()->json([
-                 'status_code' => 200,
-                 'success' => true,
-                 'message' => 'My stories retrieved successfully',
-                 'data' => [
-                     'stories' => $mappedStories,
-                     'user' => app(AuthController::class)->mapUserDetails($user),
-                     'total_stories' => $stories->total(),
-                     'status_filter' => $status
-                 ],
-                 'pagination' => [
-                     'current_page' => $stories->currentPage(),
-                     'last_page' => $stories->lastPage(),
-                     'per_page' => $stories->perPage(),
-                     'total' => $stories->total(),
-                     'from' => $stories->firstItem(),
-                     'to' => $stories->lastItem(),
-                     'has_more_pages' => $stories->hasMorePages()
-                 ]
-             ], 200);
+                         $responseData = [
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'My stories retrieved successfully',
+                'data' => [
+                    'stories' => $mappedStories,
+                    'user' => app(AuthController::class)->mapUserDetails($user),
+                    'total_stories' => $stories->total(),
+                    'status_filter' => $status
+                ],
+                'pagination' => [
+                    'current_page' => $stories->currentPage(),
+                    'last_page' => $stories->lastPage(),
+                    'per_page' => $stories->perPage(),
+                    'total' => $stories->total(),
+                    'from' => $stories->firstItem(),
+                    'to' => $stories->lastItem(),
+                    'has_more_pages' => $stories->hasMorePages()
+                ]
+            ];
+
+            return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
 
          } catch (ValidationException $e) {
              return response()->json([
@@ -1390,12 +1447,14 @@ class StoryController extends Controller
 
              DB::commit();
 
-             return response()->json([
-                 'status_code' => 200,
-                 'success' => true,
-                 'message' => 'Story viewed successfully',
-                 'data' => $this->mapStory($story, $user)
-             ], 200);
+                         $responseData = [
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Story viewed successfully',
+                'data' => $this->mapStory($story, $user)
+            ];
+
+            return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
 
          } catch (ValidationException $e) {
              DB::rollBack();
@@ -1430,12 +1489,14 @@ class StoryController extends Controller
                 ->active()
                 ->findOrFail($validatedData['story_id']);
 
-            return response()->json([
+            $responseData = [
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'My story retrieved successfully',
                 'data' => $this->mapStory($story, $user)
-            ], 200);
+            ];
+
+            return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
 
         } catch (ValidationException $e) {
             return response()->json([
