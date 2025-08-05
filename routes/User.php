@@ -168,6 +168,10 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('get-hidden-friend-posts' , 'getHiddenFriendPosts');
 
+        Route::post('restrict-friend-notifications' , 'restrictFriendNotifications');
+
+        Route::post('get-friend-notification-restrictions' , 'getFriendNotificationRestrictions');
+
       });
     });
 
