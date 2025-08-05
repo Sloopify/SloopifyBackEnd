@@ -158,6 +158,10 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('get-post-notifications-status' , 'getPostNotificationsStatus');
 
+        Route::post('hide-specific-friend-post' , 'hideSpecificFriendPost');
+
+        Route::post('get-hidden-posts' , 'getHiddenPosts');
+
         Route::post('hide-friend-posts' , 'hideFriendPosts');
 
         Route::post('unhide-friend-posts' , 'unhideFriendPosts');
