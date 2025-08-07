@@ -4876,7 +4876,167 @@ class PostController extends Controller
                 'success' => false,
                 'message' => 'Failed to retrieve hidden comments',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function editComment(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'comment_id' => 'required|integer|exists:post_comments,id',
+                'comment_text' => 'required|string|max:1000',
+                'mentions' => 'nullable|array',
+                'mentions.*' => 'integer|exists:users,id'
             ]);
+
+            DB::beginTransaction();
+
+            // Get the comment
+            $comment = DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->where('is_deleted', false)
+                ->first();
+
+            if (!$comment) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ]);
+            }
+
+            // Check if user owns the comment
+            if ($comment->user_id !== $user->id) {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'You can only edit your own comments'
+                ]);
+            }
+
+            // Check if post still exists and comments are enabled
+            $post = DB::table('posts')
+                ->where('id', $comment->post_id)
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$post) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post not found'
+                ]);
+            }
+
+            if (!$post->comments_enabled) {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Comments are disabled for this post'
+                ]);
+            }
+
+            // Validate mentions if provided
+            if (isset($validatedData['mentions']) && !empty($validatedData['mentions'])) {
+                foreach ($validatedData['mentions'] as $mentionedUserId) {
+                    // Check if mentioned user exists and is a friend
+                    $mentionedUser = DB::table('users')->where('id', $mentionedUserId)->first();
+                    if (!$mentionedUser) {
+                        return response()->json([
+                            'status_code' => 422,
+                            'success' => false,
+                            'message' => 'One or more mentioned users do not exist'
+                        ]);
+                    }
+
+                    // Check friendship for mentions
+                    if ($mentionedUserId !== $user->id) {
+                        $mentionFriendship = DB::table('friendships')
+                            ->where(function($query) use ($user, $mentionedUserId) {
+                                $query->where('user_id', $user->id)
+                                      ->where('friend_id', $mentionedUserId);
+                            })
+                            ->orWhere(function($query) use ($user, $mentionedUserId) {
+                                $query->where('user_id', $mentionedUserId)
+                                      ->where('friend_id', $user->id);
+                            })
+                            ->where('status', 'accepted')
+                            ->first();
+
+                        if (!$mentionFriendship) {
+                            return response()->json([
+                                'status_code' => 422,
+                                'success' => false,
+                                'message' => 'You can only mention your friends'
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // Update the comment
+            DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->update([
+                    'comment_text' => $validatedData['comment_text'],
+                    'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                    'updated_at' => now()
+                ]);
+
+            // Get the updated comment with user details
+            $updatedComment = DB::table('post_comments')
+                ->join('users', 'post_comments.user_id', '=', 'users.id')
+                ->where('post_comments.id', $validatedData['comment_id'])
+                ->select(
+                    'post_comments.*',
+                    'users.first_name',
+                    'users.last_name'
+                )
+                ->first();
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Comment updated successfully',
+                'data' => [
+                    'comment' => [
+                        'id' => $updatedComment->id,
+                        'post_id' => $updatedComment->post_id,
+                        'parent_comment_id' => $updatedComment->parent_comment_id,
+                        'comment_text' => $updatedComment->comment_text,
+                        'mentions' => $updatedComment->mentions ? json_decode($updatedComment->mentions, true) : [],
+                        'created_at' => $updatedComment->created_at,
+                        'updated_at' => $updatedComment->updated_at,
+                        'user' => [
+                            'id' => $updatedComment->user_id,
+                            'first_name' => $updatedComment->first_name,
+                            'last_name' => $updatedComment->last_name
+                        ]
+                    ]
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update comment',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
