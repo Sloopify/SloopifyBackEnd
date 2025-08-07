@@ -182,6 +182,14 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('get-hidden-suggested-posts' , 'getHiddenSuggestedPosts');
 
+        Route::post('create-comment' , 'createComment');
+
+        Route::post('reply-to-comment' , 'replyToComment');
+
+        Route::post('get-post-comments' , 'getPostComments');
+
+        Route::post('delete-comment' , 'deleteComment');
+
       });
     });
 
@@ -311,6 +319,8 @@ Route::group(['prefix' => 'api/v1'], function () {
     
       });
     });
+
+ 
 
 });
 

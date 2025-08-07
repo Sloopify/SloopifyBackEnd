@@ -4103,6 +4103,609 @@ class PostController extends Controller
             ], 500);
         }
     }
+    
+    public function createComment(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'comment_text' => 'required|string|max:1000',
+                'mentions' => 'nullable|array',
+                'mentions.*' => 'integer|exists:users,id'
+            ]);
+
+            DB::beginTransaction();
+
+            // Check if post exists and comments are enabled
+            $post = DB::table('posts')
+                ->where('id', $validatedData['post_id'])
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$post) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post not found'
+                ]);
+            }
+
+            if (!$post->comments_enabled) {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Comments are disabled for this post'
+                ]);
+            }
+
+            // Check if user can see the post (privacy checks)
+            $postOwner = DB::table('users')->where('id', $post->user_id)->first();
+            if (!$postOwner) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post owner not found'
+                ]);
+            }
+
+            // Privacy check - only friends can comment if post is friends-only
+            if ($post->privacy === 'friends' && $post->user_id !== $user->id) {
+                $friendship = DB::table('friendships')
+                    ->where(function($query) use ($user, $post) {
+                        $query->where('user_id', $user->id)
+                              ->where('friend_id', $post->user_id);
+                    })
+                    ->orWhere(function($query) use ($user, $post) {
+                        $query->where('user_id', $post->user_id)
+                              ->where('friend_id', $user->id);
+                    })
+                    ->where('status', 'accepted')
+                    ->first();
+
+                if (!$friendship) {
+                    return response()->json([
+                        'status_code' => 403,
+                        'success' => false,
+                        'message' => 'You can only comment on posts from your friends'
+                    ]);
+                }
+            }
+
+            // Validate mentions if provided
+            if (isset($validatedData['mentions']) && !empty($validatedData['mentions'])) {
+                foreach ($validatedData['mentions'] as $mentionedUserId) {
+                    // Check if mentioned user exists and is a friend
+                    $mentionedUser = DB::table('users')->where('id', $mentionedUserId)->first();
+                    if (!$mentionedUser) {
+                        return response()->json([
+                            'status_code' => 422,
+                            'success' => false,
+                            'message' => 'One or more mentioned users do not exist'
+                        ]);
+                    }
+
+                    // Check friendship for mentions
+                    if ($mentionedUserId !== $user->id) {
+                        $mentionFriendship = DB::table('friendships')
+                            ->where(function($query) use ($user, $mentionedUserId) {
+                                $query->where('user_id', $user->id)
+                                      ->where('friend_id', $mentionedUserId);
+                            })
+                            ->orWhere(function($query) use ($user, $mentionedUserId) {
+                                $query->where('user_id', $mentionedUserId)
+                                      ->where('friend_id', $user->id);
+                            })
+                            ->where('status', 'accepted')
+                            ->first();
+
+                        if (!$mentionFriendship) {
+                            return response()->json([
+                                'status_code' => 422,
+                                'success' => false,
+                                'message' => 'You can only mention your friends'
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // Create the comment
+            $commentId = DB::table('post_comments')->insertGetId([
+                'post_id' => $validatedData['post_id'],
+                'user_id' => $user->id,
+                'comment_text' => $validatedData['comment_text'],
+                'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Get the created comment with user details
+            $comment = DB::table('post_comments')
+                ->join('users', 'post_comments.user_id', '=', 'users.id')
+                ->where('post_comments.id', $commentId)
+                ->select(
+                    'post_comments.*',
+                    'users.first_name',
+                    'users.last_name'
+                )
+                ->first();
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 201,
+                'success' => true,
+                'message' => 'Comment created successfully',
+                'data' => [
+                    'comment' => [
+                        'id' => $comment->id,
+                        'post_id' => $comment->post_id,
+                        'comment_text' => $comment->comment_text,
+                        'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
+                        'created_at' => $comment->created_at,
+                        'user' => [
+                            'id' => $comment->user_id,
+                            'first_name' => $comment->first_name,
+                            'last_name' => $comment->last_name
+                        ],
+                        'replies_count' => 0
+                    ]
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to create comment',
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+   
+    public function replyToComment(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'comment_id' => 'required|integer|exists:post_comments,id',
+                'comment_text' => 'required|string|max:1000',
+                'mentions' => 'nullable|array',
+                'mentions.*' => 'integer|exists:users,id'
+            ]);
+
+            DB::beginTransaction();
+
+            // Get the parent comment and post details
+            $parentComment = DB::table('post_comments')
+                ->join('posts', 'post_comments.post_id', '=', 'posts.id')
+                ->where('post_comments.id', $validatedData['comment_id'])
+                ->where('post_comments.is_deleted', false)
+                ->where('posts.status', 'approved')
+                ->select('post_comments.*', 'posts.comments_enabled', 'posts.privacy', 'posts.user_id as post_owner_id')
+                ->first();
+
+            if (!$parentComment) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ]);
+            }
+
+            // Check if this is already a reply (we only allow one level of nesting)
+            if ($parentComment->parent_comment_id !== null) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Cannot reply to a reply. You can only reply to main comments.'
+                ]);
+            }
+
+            if (!$parentComment->comments_enabled) {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'Comments are disabled for this post'
+                ]);
+            }
+
+            // Privacy check - only friends can reply if post is friends-only
+            if ($parentComment->privacy === 'friends' && $parentComment->post_owner_id !== $user->id) {
+                $friendship = DB::table('friendships')
+                    ->where(function($query) use ($user, $parentComment) {
+                        $query->where('user_id', $user->id)
+                              ->where('friend_id', $parentComment->post_owner_id);
+                    })
+                    ->orWhere(function($query) use ($user, $parentComment) {
+                        $query->where('user_id', $parentComment->post_owner_id)
+                              ->where('friend_id', $user->id);
+                    })
+                    ->where('status', 'accepted')
+                    ->first();
+
+                if (!$friendship) {
+                    return response()->json([
+                        'status_code' => 403,
+                        'success' => false,
+                        'message' => 'You can only reply to comments on posts from your friends'
+                    ]);
+                }
+            }
+
+            // Validate mentions if provided
+            if (isset($validatedData['mentions']) && !empty($validatedData['mentions'])) {
+                foreach ($validatedData['mentions'] as $mentionedUserId) {
+                    $mentionedUser = DB::table('users')->where('id', $mentionedUserId)->first();
+                    if (!$mentionedUser) {
+                        return response()->json([
+                            'status_code' => 422,
+                            'success' => false,
+                            'message' => 'One or more mentioned users do not exist'
+                        ]);
+                    }
+
+                    if ($mentionedUserId !== $user->id) {
+                        $mentionFriendship = DB::table('friendships')
+                            ->where(function($query) use ($user, $mentionedUserId) {
+                                $query->where('user_id', $user->id)
+                                      ->where('friend_id', $mentionedUserId);
+                            })
+                            ->orWhere(function($query) use ($user, $mentionedUserId) {
+                                $query->where('user_id', $mentionedUserId)
+                                      ->where('friend_id', $user->id);
+                            })
+                            ->where('status', 'accepted')
+                            ->first();
+
+                        if (!$mentionFriendship) {
+                            return response()->json([
+                                'status_code' => 422,
+                                'success' => false,
+                                'message' => 'You can only mention your friends'
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // Create the reply
+            $replyId = DB::table('post_comments')->insertGetId([
+                'post_id' => $parentComment->post_id,
+                'user_id' => $user->id,
+                'parent_comment_id' => $validatedData['comment_id'],
+                'comment_text' => $validatedData['comment_text'],
+                'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Get the created reply with user details
+            $reply = DB::table('post_comments')
+                ->join('users', 'post_comments.user_id', '=', 'users.id')
+                ->where('post_comments.id', $replyId)
+                ->select(
+                    'post_comments.*',
+                    'users.first_name',
+                    'users.last_name'
+                )
+                ->first();
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 201,
+                'success' => true,
+                'message' => 'Reply created successfully',
+                'data' => [
+                    'reply' => [
+                        'id' => $reply->id,
+                        'post_id' => $reply->post_id,
+                        'parent_comment_id' => $reply->parent_comment_id,
+                        'comment_text' => $reply->comment_text,
+                        'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
+                        'created_at' => $reply->created_at,
+                        'user' => [
+                            'id' => $reply->user_id,
+                            'first_name' => $reply->first_name,
+                            'last_name' => $reply->last_name
+                        ]
+                    ]
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to create reply',
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public function getPostComments(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:50',
+                'replies_page' => 'nullable|integer|min:1',
+                'replies_per_page' => 'nullable|integer|min:1|max:20'
+            ]);
+
+            $page = $validatedData['page'] ?? 1;
+            $perPage = $validatedData['per_page'] ?? 20;
+            $offset = ($page - 1) * $perPage;
+            
+            $repliesPage = $validatedData['replies_page'] ?? 1;
+            $repliesPerPage = $validatedData['replies_per_page'] ?? 10;
+            $repliesOffset = ($repliesPage - 1) * $repliesPerPage;
+
+            // Check if post exists and user can see it
+            $post = DB::table('posts')
+                ->where('id', $validatedData['post_id'])
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$post) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post not found'
+                ]);
+            }
+
+            // Privacy check
+            if ($post->privacy === 'friends' && $post->user_id !== $user->id) {
+                $friendship = DB::table('friendships')
+                    ->where(function($query) use ($user, $post) {
+                        $query->where('user_id', $user->id)
+                              ->where('friend_id', $post->user_id);
+                    })
+                    ->orWhere(function($query) use ($user, $post) {
+                        $query->where('user_id', $post->user_id)
+                              ->where('friend_id', $user->id);
+                    })
+                    ->where('status', 'accepted')
+                    ->first();
+
+                if (!$friendship) {
+                    return response()->json([
+                        'status_code' => 403,
+                        'success' => false,
+                        'message' => 'You can only view comments on posts from your friends'
+                    ]);
+                }
+            }
+
+            // Get main comments (not replies)
+            $mainComments = DB::table('post_comments')
+                ->join('users', 'post_comments.user_id', '=', 'users.id')
+                ->where('post_comments.post_id', $validatedData['post_id'])
+                ->where('post_comments.parent_comment_id', null)
+                ->where('post_comments.is_deleted', false)
+                ->select(
+                    'post_comments.*',
+                    'users.first_name',
+                    'users.last_name'
+                )
+                ->orderBy('post_comments.created_at', 'asc')
+                ->offset($offset)
+                ->limit($perPage)
+                ->get();
+
+                        // Get replies for each main comment with pagination
+            $commentsWithReplies = [];
+            foreach ($mainComments as $comment) {
+                // Get total replies count for this comment
+                $totalReplies = DB::table('post_comments')
+                    ->where('parent_comment_id', $comment->id)
+                    ->where('is_deleted', false)
+                    ->count();
+
+                // Get paginated replies for this comment
+                $replies = DB::table('post_comments')
+                    ->join('users', 'post_comments.user_id', '=', 'users.id')
+                    ->where('post_comments.parent_comment_id', $comment->id)
+                    ->where('post_comments.is_deleted', false)
+                    ->select(
+                        'post_comments.*',
+                        'users.first_name',
+                        'users.last_name'
+                    )
+                    ->orderBy('post_comments.created_at', 'asc')
+                    ->offset($repliesOffset)
+                    ->limit($repliesPerPage)
+                    ->get();
+
+                $repliesArray = [];
+                foreach ($replies as $reply) {
+                    $repliesArray[] = [
+                        'id' => $reply->id,
+                        'comment_text' => $reply->comment_text,
+                        'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
+                        'created_at' => $reply->created_at,
+                        'user' => [
+                            'id' => $reply->user_id,
+                            'first_name' => $reply->first_name,
+                            'last_name' => $reply->last_name
+                        ]
+                    ];
+                }
+
+                $totalRepliesPages = ceil($totalReplies / $repliesPerPage);
+
+                $commentsWithReplies[] = [
+                    'id' => $comment->id,
+                    'comment_text' => $comment->comment_text,
+                    'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
+                    'created_at' => $comment->created_at,
+                    'user' => [
+                        'id' => $comment->user_id,
+                        'first_name' => $comment->first_name,
+                        'last_name' => $comment->last_name
+                    ],
+                    'replies_count' => $totalReplies,
+                    'replies' => $repliesArray,
+                    'replies_pagination' => [
+                        'current_page' => $repliesPage,
+                        'per_page' => $repliesPerPage,
+                        'total' => $totalReplies,
+                        'total_pages' => $totalRepliesPages,
+                        'from' => $repliesOffset + 1,
+                        'to' => min($repliesOffset + $repliesPerPage, $totalReplies)
+                    ]
+                ];
+            }
+
+            // Get total count for pagination
+            $totalComments = DB::table('post_comments')
+                ->where('post_id', $validatedData['post_id'])
+                ->where('parent_comment_id', null)
+                ->where('is_deleted', false)
+                ->count();
+
+            $totalPages = ceil($totalComments / $perPage);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Comments retrieved successfully',
+                'data' => [
+                    'comments' => $commentsWithReplies,
+                    'pagination' => [
+                        'current_page' => $page,
+                        'per_page' => $perPage,
+                        'total' => $totalComments,
+                        'total_pages' => $totalPages,
+                        'from' => $offset + 1,
+                        'to' => min($offset + $perPage, $totalComments)
+                    ]
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve comments',
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public function deleteComment(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'comment_id' => 'required|integer|exists:post_comments,id'
+            ]);
+
+            DB::beginTransaction();
+
+            // Get the comment
+            $comment = DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->where('is_deleted', false)
+                ->first();
+
+            if (!$comment) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ]);
+            }
+
+            // Check if user owns the comment or owns the post
+            $post = DB::table('posts')->where('id', $comment->post_id)->first();
+            
+            if ($comment->user_id !== $user->id && $post->user_id !== $user->id) {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'You can only delete your own comments or comments on your posts'
+                ]);
+            }
+
+            // Soft delete the comment
+            DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->update([
+                    'is_deleted' => true,
+                    'updated_at' => now()
+                ]);
+
+            // If this is a main comment, also soft delete all its replies
+            if ($comment->parent_comment_id === null) {
+                DB::table('post_comments')
+                    ->where('parent_comment_id', $validatedData['comment_id'])
+                    ->update([
+                        'is_deleted' => true,
+                        'updated_at' => now()
+                    ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Comment deleted successfully'
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to delete comment',
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
 
 
 
@@ -4335,5 +4938,7 @@ class PostController extends Controller
             ], 500);
         }
     }
+ 
+ 
 
 }
