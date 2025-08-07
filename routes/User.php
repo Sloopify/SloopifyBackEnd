@@ -188,6 +188,10 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('get-post-comments' , 'getPostComments');
 
+        Route::post('hide-comment' , 'hideComment');
+
+        Route::post('get-hidden-comments' , 'getHiddenComments');
+
         Route::post('delete-comment' , 'deleteComment');
 
       });
@@ -320,7 +324,7 @@ Route::group(['prefix' => 'api/v1'], function () {
       });
     });
 
- 
+    
 
 });
 

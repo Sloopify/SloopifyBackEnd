@@ -4503,12 +4503,22 @@ class PostController extends Controller
                 }
             }
 
-            // Get main comments (not replies)
+            // Get main comments (not replies) excluding hidden ones
             $mainComments = DB::table('post_comments')
                 ->join('users', 'post_comments.user_id', '=', 'users.id')
                 ->where('post_comments.post_id', $validatedData['post_id'])
                 ->where('post_comments.parent_comment_id', null)
                 ->where('post_comments.is_deleted', false)
+                ->whereNotExists(function($query) use ($user) {
+                    $query->select(DB::raw(1))
+                          ->from('hidden_comments')
+                          ->whereColumn('hidden_comments.comment_id', 'post_comments.id')
+                          ->where('hidden_comments.user_id', $user->id)
+                          ->where(function($subQuery) {
+                              $subQuery->where('hidden_comments.expires_at', '>', now())
+                                      ->orWhere('hidden_comments.hide_type', 'permanent');
+                          });
+                })
                 ->select(
                     'post_comments.*',
                     'users.first_name',
@@ -4522,17 +4532,37 @@ class PostController extends Controller
                         // Get replies for each main comment with pagination
             $commentsWithReplies = [];
             foreach ($mainComments as $comment) {
-                // Get total replies count for this comment
+                // Get total replies count for this comment excluding hidden ones
                 $totalReplies = DB::table('post_comments')
                     ->where('parent_comment_id', $comment->id)
                     ->where('is_deleted', false)
+                    ->whereNotExists(function($query) use ($user) {
+                        $query->select(DB::raw(1))
+                              ->from('hidden_comments')
+                              ->whereColumn('hidden_comments.comment_id', 'post_comments.id')
+                              ->where('hidden_comments.user_id', $user->id)
+                              ->where(function($subQuery) {
+                                  $subQuery->where('hidden_comments.expires_at', '>', now())
+                                          ->orWhere('hidden_comments.hide_type', 'permanent');
+                              });
+                    })
                     ->count();
 
-                // Get paginated replies for this comment
+                // Get paginated replies for this comment excluding hidden ones
                 $replies = DB::table('post_comments')
                     ->join('users', 'post_comments.user_id', '=', 'users.id')
                     ->where('post_comments.parent_comment_id', $comment->id)
                     ->where('post_comments.is_deleted', false)
+                    ->whereNotExists(function($query) use ($user) {
+                        $query->select(DB::raw(1))
+                              ->from('hidden_comments')
+                              ->whereColumn('hidden_comments.comment_id', 'post_comments.id')
+                              ->where('hidden_comments.user_id', $user->id)
+                              ->where(function($subQuery) {
+                                  $subQuery->where('hidden_comments.expires_at', '>', now())
+                                          ->orWhere('hidden_comments.hide_type', 'permanent');
+                              });
+                    })
                     ->select(
                         'post_comments.*',
                         'users.first_name',
@@ -4621,6 +4651,230 @@ class PostController extends Controller
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to retrieve comments',
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public function hideComment(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'comment_id' => 'required|integer|exists:post_comments,id',
+                'hide_type' => 'required|in:permanent,30_days,unhide'
+            ]);
+
+            DB::beginTransaction();
+
+            // Get the comment
+            $comment = DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->where('is_deleted', false)
+                ->first();
+
+            if (!$comment) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ]);
+            }
+
+            // Check if user can hide this comment (not their own comment)
+            if ($comment->user_id === $user->id) {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'You cannot hide your own comment'
+                ]);
+            }
+
+            // Check if hide setting already exists
+            $existingHide = DB::table('hidden_comments')
+                ->where('user_id', $user->id)
+                ->where('comment_id', $validatedData['comment_id'])
+                ->first();
+
+            if ($validatedData['hide_type'] === 'unhide') {
+                // Remove hide setting
+                if ($existingHide) {
+                    DB::table('hidden_comments')
+                        ->where('user_id', $user->id)
+                        ->where('comment_id', $validatedData['comment_id'])
+                        ->delete();
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Comment unhidden successfully'
+                ]);
+            }
+
+            // Calculate expiration date
+            $expiresAt = null;
+            if ($validatedData['hide_type'] === '30_days') {
+                $expiresAt = now()->addDays(30);
+            }
+
+            // Create or update hide setting
+            if ($existingHide) {
+                DB::table('hidden_comments')
+                    ->where('user_id', $user->id)
+                    ->where('comment_id', $validatedData['comment_id'])
+                    ->update([
+                        'hide_type' => $validatedData['hide_type'],
+                        'expires_at' => $expiresAt,
+                        'updated_at' => now()
+                    ]);
+            } else {
+                DB::table('hidden_comments')->insert([
+                    'user_id' => $user->id,
+                    'comment_id' => $validatedData['comment_id'],
+                    'comment_owner_id' => $comment->user_id,
+                    'post_id' => $comment->post_id,
+                    'hide_type' => $validatedData['hide_type'],
+                    'expires_at' => $expiresAt,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+
+            DB::commit();
+
+            $hideMessage = $validatedData['hide_type'] === 'permanent' 
+                ? 'Comment hidden permanently' 
+                : 'Comment hidden for 30 days';
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => $hideMessage
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to hide comment',
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public function getHiddenComments(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:50'
+            ]);
+
+            $page = $validatedData['page'] ?? 1;
+            $perPage = $validatedData['per_page'] ?? 20;
+            $offset = ($page - 1) * $perPage;
+
+            // Get hidden comments with comment details
+            $hiddenComments = DB::table('hidden_comments')
+                ->join('post_comments', 'hidden_comments.comment_id', '=', 'post_comments.id')
+                ->join('users', 'post_comments.user_id', '=', 'users.id')
+                ->join('posts', 'post_comments.post_id', '=', 'posts.id')
+                ->where('hidden_comments.user_id', $user->id)
+                ->where(function($query) {
+                    $query->where('hidden_comments.expires_at', '>', now())
+                          ->orWhere('hidden_comments.hide_type', 'permanent');
+                })
+                ->select(
+                    'hidden_comments.*',
+                    'post_comments.comment_text',
+                    'post_comments.mentions',
+                    'post_comments.created_at as comment_created_at',
+                    'users.first_name',
+                    'users.last_name',
+                    'posts.content as post_content'
+                )
+                ->orderBy('hidden_comments.created_at', 'desc')
+                ->offset($offset)
+                ->limit($perPage)
+                ->get();
+
+            $formattedComments = [];
+            foreach ($hiddenComments as $hiddenComment) {
+                $formattedComments[] = [
+                    'id' => $hiddenComment->comment_id,
+                    'comment_text' => $hiddenComment->comment_text,
+                    'mentions' => $hiddenComment->mentions ? json_decode($hiddenComment->mentions, true) : [],
+                    'created_at' => $hiddenComment->comment_created_at,
+                    'user' => [
+                        'id' => $hiddenComment->comment_owner_id,
+                        'first_name' => $hiddenComment->first_name,
+                        'last_name' => $hiddenComment->last_name
+                    ],
+                    'post' => [
+                        'id' => $hiddenComment->post_id,
+                        'content' => $hiddenComment->post_content
+                    ],
+                    'hide_type' => $hiddenComment->hide_type,
+                    'expires_at' => $hiddenComment->expires_at,
+                    'hidden_at' => $hiddenComment->created_at
+                ];
+            }
+
+            // Get total count for pagination
+            $totalHidden = DB::table('hidden_comments')
+                ->where('user_id', $user->id)
+                ->where(function($query) {
+                    $query->where('expires_at', '>', now())
+                          ->orWhere('hide_type', 'permanent');
+                })
+                ->count();
+
+            $totalPages = ceil($totalHidden / $perPage);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Hidden comments retrieved successfully',
+                'data' => [
+                    'hidden_comments' => $formattedComments,
+                    'pagination' => [
+                        'current_page' => $page,
+                        'per_page' => $perPage,
+                        'total' => $totalHidden,
+                        'total_pages' => $totalPages,
+                        'from' => $offset + 1,
+                        'to' => min($offset + $perPage, $totalHidden)
+                    ]
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve hidden comments',
                 'error' => $e->getMessage()
             ]);
         }
