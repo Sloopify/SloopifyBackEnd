@@ -192,6 +192,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('get-hidden-comments' , 'getHiddenComments');
 
+        Route::post('edit-comment' , 'editComment');
+
         Route::post('delete-comment' , 'deleteComment');
 
       });
