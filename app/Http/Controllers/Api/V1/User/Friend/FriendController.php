@@ -618,6 +618,11 @@ class FriendController extends Controller
                  $query->orderBy('friendships.status', $sortOrder);
              }
 
+             // Count requests by status first
+             $pendingCount = Friendship::where('user_id', $user->id)->where('status', 'pending')->count();
+             $declinedCount = Friendship::where('user_id', $user->id)->where('status', 'declined')->count();
+             $cancelledCount = Friendship::where('user_id', $user->id)->where('status', 'cancelled')->count();
+
              // Get requests with pagination
              $sentRequests = $query->paginate($perPage);
 
@@ -677,10 +682,7 @@ class FriendController extends Controller
                  return $userDetails;
              });
 
-             // Count requests by status
-             $pendingCount = Friendship::where('user_id', $user->id)->where('status', 'pending')->count();
-             $declinedCount = Friendship::where('user_id', $user->id)->where('status', 'declined')->count();
-             $cancelledCount = Friendship::where('user_id', $user->id)->where('status', 'cancelled')->count();
+
 
              return response()->json([
                  'status_code' => 200,
