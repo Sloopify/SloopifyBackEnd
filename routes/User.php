@@ -194,6 +194,12 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('edit-comment' , 'editComment');
 
+        Route::post('react-to-comment' , 'reactToComment');
+
+        Route::post('remove-comment-reaction' , 'removeCommentReaction');
+
+        Route::post('get-comment-reactions' , 'getCommentReactions');
+
         Route::post('delete-comment' , 'deleteComment');
 
       });

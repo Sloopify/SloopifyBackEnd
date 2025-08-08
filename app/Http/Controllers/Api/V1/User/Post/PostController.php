@@ -5040,6 +5040,405 @@ class PostController extends Controller
         }
     }
 
+  
+    public function reactToComment(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'comment_id' => 'required|integer|exists:post_comments,id',
+                'reaction_type' => 'required|in:like,love,laugh,wow,sad,angry'
+            ]);
+
+            DB::beginTransaction();
+
+            // Get the comment
+            $comment = DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->where('is_deleted', false)
+                ->first();
+
+            if (!$comment) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ], 404);
+            }
+
+            // Check if user can see the comment (privacy checks)
+            $post = DB::table('posts')
+                ->where('id', $comment->post_id)
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$post) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post not found'
+                ], 404);
+            }
+
+            // Privacy check - only friends can react if post is friends-only
+            if ($post->privacy === 'friends' && $post->user_id !== $user->id) {
+                $friendship = DB::table('friendships')
+                    ->where(function($query) use ($user, $post) {
+                        $query->where('user_id', $user->id)
+                              ->where('friend_id', $post->user_id);
+                    })
+                    ->orWhere(function($query) use ($user, $post) {
+                        $query->where('user_id', $post->user_id)
+                              ->where('friend_id', $user->id);
+                    })
+                    ->where('status', 'accepted')
+                    ->first();
+
+                if (!$friendship) {
+                    return response()->json([
+                        'status_code' => 403,
+                        'success' => false,
+                        'message' => 'You can only react to comments on posts from your friends'
+                    ], 403);
+                }
+            }
+
+            // Check if user already reacted to this comment
+            $existingReaction = DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->where('user_id', $user->id)
+                ->first();
+
+            if ($existingReaction) {
+                // Update existing reaction
+                DB::table('comment_reactions')
+                    ->where('comment_id', $validatedData['comment_id'])
+                    ->where('user_id', $user->id)
+                    ->update([
+                        'reaction_type' => $validatedData['reaction_type'],
+                        'updated_at' => now()
+                    ]);
+            } else {
+                // Create new reaction
+                DB::table('comment_reactions')->insert([
+                    'comment_id' => $validatedData['comment_id'],
+                    'user_id' => $user->id,
+                    'reaction_type' => $validatedData['reaction_type'],
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+
+            // Get updated reaction count for this comment
+            $reactionCounts = DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->select('reaction_type', DB::raw('count(*) as count'))
+                ->groupBy('reaction_type')
+                ->get()
+                ->keyBy('reaction_type');
+
+            // Get user's current reaction
+            $userReaction = DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->where('user_id', $user->id)
+                ->first();
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Reaction updated successfully',
+                'data' => [
+                    'comment_id' => $validatedData['comment_id'],
+                    'user_reaction' => $userReaction ? $userReaction->reaction_type : null,
+                    'reaction_counts' => [
+                        'like' => $reactionCounts->get('like')->count ?? 0,
+                        'love' => $reactionCounts->get('love')->count ?? 0,
+                        'laugh' => $reactionCounts->get('laugh')->count ?? 0,
+                        'wow' => $reactionCounts->get('wow')->count ?? 0,
+                        'sad' => $reactionCounts->get('sad')->count ?? 0,
+                        'angry' => $reactionCounts->get('angry')->count ?? 0
+                    ],
+                    'total_reactions' => $reactionCounts->sum('count')
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to react to comment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+   
+    public function removeCommentReaction(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'comment_id' => 'required|integer|exists:post_comments,id'
+            ]);
+
+            DB::beginTransaction();
+
+            // Get the comment
+            $comment = DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->where('is_deleted', false)
+                ->first();
+
+            if (!$comment) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ], 404);
+            }
+
+            // Check if user has a reaction to remove
+            $existingReaction = DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$existingReaction) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No reaction found to remove'
+                ], 404);
+            }
+
+            // Remove the reaction
+            DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->where('user_id', $user->id)
+                ->delete();
+
+            // Get updated reaction count for this comment
+            $reactionCounts = DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->select('reaction_type', DB::raw('count(*) as count'))
+                ->groupBy('reaction_type')
+                ->get()
+                ->keyBy('reaction_type');
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Reaction removed successfully',
+                'data' => [
+                    'comment_id' => $validatedData['comment_id'],
+                    'user_reaction' => null,
+                    'reaction_counts' => [
+                        'like' => $reactionCounts->get('like')->count ?? 0,
+                        'love' => $reactionCounts->get('love')->count ?? 0,
+                        'laugh' => $reactionCounts->get('laugh')->count ?? 0,
+                        'wow' => $reactionCounts->get('wow')->count ?? 0,
+                        'sad' => $reactionCounts->get('sad')->count ?? 0,
+                        'angry' => $reactionCounts->get('angry')->count ?? 0
+                    ],
+                    'total_reactions' => $reactionCounts->sum('count')
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to remove reaction',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+   
+    public function getCommentReactions(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'comment_id' => 'required|integer|exists:post_comments,id',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:50'
+            ]);
+
+            $page = $validatedData['page'] ?? 1;
+            $perPage = $validatedData['per_page'] ?? 20;
+            $offset = ($page - 1) * $perPage;
+
+            // Get the comment
+            $comment = DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->where('is_deleted', false)
+                ->first();
+
+            if (!$comment) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ], 404);
+            }
+
+            // Check if user can see the comment (privacy checks)
+            $post = DB::table('posts')
+                ->where('id', $comment->post_id)
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$post) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post not found'
+                ], 404);
+            }
+
+            // Privacy check - only friends can see reactions if post is friends-only
+            if ($post->privacy === 'friends' && $post->user_id !== $user->id) {
+                $friendship = DB::table('friendships')
+                    ->where(function($query) use ($user, $post) {
+                        $query->where('user_id', $user->id)
+                              ->where('friend_id', $post->user_id);
+                    })
+                    ->orWhere(function($query) use ($user, $post) {
+                        $query->where('user_id', $post->user_id)
+                              ->where('friend_id', $user->id);
+                    })
+                    ->where('status', 'accepted')
+                    ->first();
+
+                if (!$friendship) {
+                    return response()->json([
+                        'status_code' => 403,
+                        'success' => false,
+                        'message' => 'You can only view reactions on comments from your friends'
+                    ], 403);
+                }
+            }
+
+            // Get reaction counts
+            $reactionCounts = DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->select('reaction_type', DB::raw('count(*) as count'))
+                ->groupBy('reaction_type')
+                ->get()
+                ->keyBy('reaction_type');
+
+            // Get user's reaction
+            $userReaction = DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->where('user_id', $user->id)
+                ->first();
+
+            // Get paginated reactions with user details
+            $reactions = DB::table('comment_reactions')
+                ->join('users', 'comment_reactions.user_id', '=', 'users.id')
+                ->where('comment_reactions.comment_id', $validatedData['comment_id'])
+                ->select(
+                    'comment_reactions.*',
+                    'users.first_name',
+                    'users.last_name'
+                )
+                ->orderBy('comment_reactions.created_at', 'desc')
+                ->offset($offset)
+                ->limit($perPage)
+                ->get();
+
+            $formattedReactions = [];
+            foreach ($reactions as $reaction) {
+                $formattedReactions[] = [
+                    'id' => $reaction->id,
+                    'reaction_type' => $reaction->reaction_type,
+                    'created_at' => $reaction->created_at,
+                    'user' => [
+                        'id' => $reaction->user_id,
+                        'first_name' => $reaction->first_name,
+                        'last_name' => $reaction->last_name
+                    ]
+                ];
+            }
+
+            // Get total count for pagination
+            $totalReactions = DB::table('comment_reactions')
+                ->where('comment_id', $validatedData['comment_id'])
+                ->count();
+
+            $totalPages = ceil($totalReactions / $perPage);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Comment reactions retrieved successfully',
+                'data' => [
+                    'comment_id' => $validatedData['comment_id'],
+                    'user_reaction' => $userReaction ? $userReaction->reaction_type : null,
+                    'reaction_counts' => [
+                        'like' => $reactionCounts->get('like')->count ?? 0,
+                        'love' => $reactionCounts->get('love')->count ?? 0,
+                        'laugh' => $reactionCounts->get('laugh')->count ?? 0,
+                        'wow' => $reactionCounts->get('wow')->count ?? 0,
+                        'sad' => $reactionCounts->get('sad')->count ?? 0,
+                        'angry' => $reactionCounts->get('angry')->count ?? 0
+                    ],
+                    'total_reactions' => $reactionCounts->sum('count'),
+                    'reactions' => $formattedReactions,
+                    'pagination' => [
+                        'current_page' => $page,
+                        'per_page' => $perPage,
+                        'total' => $totalReactions,
+                        'total_pages' => $totalPages,
+                        'from' => $offset + 1,
+                        'to' => min($offset + $perPage, $totalReactions)
+                    ]
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve comment reactions',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function deleteComment(Request $request)
     {
         try {
@@ -5125,8 +5524,7 @@ class PostController extends Controller
 
 
 
-
-
+    
 
 
 
