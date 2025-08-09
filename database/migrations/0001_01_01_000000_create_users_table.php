@@ -34,6 +34,8 @@ return new class extends Migration
             $table->string('city')->nullable();
             $table->text('google_id')->nullable();
             $table->enum('provider',['google' , 'apple'])->nullable();
+            $table->unsignedBigInteger('daily_status_id')->nullable();
+            $table->timestamp('daily_status_expires_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });
