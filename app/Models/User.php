@@ -37,6 +37,8 @@ class User extends Authenticatable
         'city',
         'google_id',
         'provider',
+        'daily_status_id',
+        'daily_status_expires_at',
     ];
 
     protected $hidden = [
@@ -50,12 +52,21 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'daily_status_expires_at' => 'datetime',
         ];
     }
 
     public function userInterests()
     {
         return $this->belongsToMany(Interest::class, 'user_interests', 'user_id', 'interest_id');
+    }
+
+    /**
+     * Get the user's current daily status
+     */
+    public function dailyStatus()
+    {
+        return $this->belongsTo(DailyStatus::class, 'daily_status_id');
     }
 
     /**

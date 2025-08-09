@@ -42,7 +42,7 @@ class StoryController extends Controller
     }
 
     private function mapStory($story, $currentUser = null)
-    {
+     {
          $currentUser = $currentUser ?: Auth::guard('user')->user();
          
          // Helper function to decode JSON and convert numeric values
@@ -53,7 +53,7 @@ class StoryController extends Controller
              }
              return $this->convertNumericValuesToDouble($data);
          };
-           
+         
          return [
              'id' => $story->id,
              'user' => app(AuthController::class)->mapUserDetails($story->user),
@@ -88,7 +88,10 @@ class StoryController extends Controller
              }),
              'views_count' => $story->views_count,
              'replies_count' => $story->replies_count,
-             'has_viewed' => $story->hasBeenViewedBy($currentUser->id),
+            // Owner should always be considered as having viewed their own story
+            'has_viewed' => ($story->user_id === $currentUser->id)
+                ? true
+                : $story->hasBeenViewedBy($currentUser->id),
              'has_voted' => $story->hasVotedBy($currentUser->id),
              'poll_results' => $story->poll_results,
              'expires_at' => $story->expires_at,
@@ -1152,17 +1155,17 @@ class StoryController extends Controller
              ]);
 
              $user = Auth::guard('user')->user();
-             
+
              $story = Story::with(['user', 'media', 'views', 'replies', 'pollVotes'])
                  ->active()
                  ->visibleTo($user->id)
                  ->findOrFail($validatedData['story_id']);
 
                          $responseData = [
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Story retrieved successfully',
-                'data' => $this->mapStory($story, $user)
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Story retrieved successfully',
+                 'data' => $this->mapStory($story, $user)
             ];
 
             return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
@@ -1219,20 +1222,20 @@ class StoryController extends Controller
              })->values();
  
                          $responseData = [
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'Stories retrieved successfully',
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'Stories retrieved successfully',
                 'data' => [
                     'stories_by_user' => $groupedStories,
-                    'pagination' => [
-                        'current_page' => $stories->currentPage(),
-                        'last_page' => $stories->lastPage(),
-                        'per_page' => $stories->perPage(),
-                        'total' => $stories->total(),
+                 'pagination' => [
+                     'current_page' => $stories->currentPage(),
+                     'last_page' => $stories->lastPage(),
+                     'per_page' => $stories->perPage(),
+                     'total' => $stories->total(),
                         'from' => $stories->firstItem(),
                         'to' => $stories->lastItem(),
-                        'has_more_pages' => $stories->hasMorePages()
-                    ]
+                     'has_more_pages' => $stories->hasMorePages()
+                 ]
                 ]
             ];
 
@@ -1258,7 +1261,7 @@ class StoryController extends Controller
      public function getStoriesByUserId(Request $request)
      {
          try {
-             $validatedData = $request->validate([
+            $validatedData = $request->validate([
                  'user_id' => 'required|integer|exists:users,id',
                  'page' => 'nullable|integer|min:1',
                  'per_page' => 'nullable|integer|min:1|max:100'
@@ -1270,12 +1273,12 @@ class StoryController extends Controller
 
              // Check if user is trying to get their own stories
              if ($currentUser->id == $targetUserId) {
-                 return response()->json([
-                     'status_code' => 400,
-                     'success' => false,
+                return response()->json([
+                    'status_code' => 400,
+                    'success' => false,
                      'message' => 'Use viewMyStoryById to get your own stories'
-                 ], 400);
-             }
+                ], 400);
+            }
 
              // Check if users are friends (for privacy)
              if (!$currentUser->isFriendsWith($targetUserId)) {
@@ -1424,7 +1427,7 @@ class StoryController extends Controller
                  ->active()
                  ->visibleTo($user->id)
                  ->findOrFail($validatedData['story_id']);
-
+ 
              // Check if user is trying to view their own story
              if ($story->user_id == $user->id) {
                  return response()->json([
@@ -1435,7 +1438,7 @@ class StoryController extends Controller
              }
 
              DB::beginTransaction();
-
+ 
              // Record view if not already viewed
              if (!$story->hasBeenViewedBy($user->id)) {
                  StoryView::create([
@@ -1444,14 +1447,14 @@ class StoryController extends Controller
                      'viewed_at' => now()
                  ]);
              }
-
+ 
              DB::commit();
 
                          $responseData = [
-                'status_code' => 200,
-                'success' => true,
+                 'status_code' => 200,
+                 'success' => true,
                 'message' => 'Story viewed successfully',
-                'data' => $this->mapStory($story, $user)
+                 'data' => $this->mapStory($story, $user)
             ];
 
             return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
@@ -1677,9 +1680,9 @@ class StoryController extends Controller
             $validOptionIds = array_column($pollOptions, 'option_id');
             
             if (!in_array($validatedData['selected_option'], $validOptionIds)) {
-                return response()->json([
+                    return response()->json([
                     'status_code' => 422,
-                    'success' => false,
+                        'success' => false,
                     'message' => 'Invalid poll option selected',
                     'errors' => ['selected_option' => ['The selected option is invalid']]
                 ], 422);
@@ -1728,7 +1731,7 @@ class StoryController extends Controller
             ], 500);
         }
     }
-
+  
     public function replyToStory(Request $request)
     {
         try {

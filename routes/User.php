@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\User\Post\PostController;
 use App\Http\Controllers\Api\V1\User\Friend\FriendController;
 use App\Http\Controllers\Api\V1\User\Settings\Sessions\SessionController;
 use App\Http\Controllers\Api\V1\User\Story\StoryController;
+use App\Http\Controllers\Api\V1\User\Home\HomeController;
 
 
 //=================================== User Auth Routes =============================
@@ -89,6 +90,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
     
    });  
+
+  
 
      //=================================== User Post =============================
 
@@ -201,9 +204,10 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('get-comment-reactions' , 'getCommentReactions');
 
         Route::post('delete-comment' , 'deleteComment');
+      });
 
       });
-    });
+   
 
     //=================================== User Stories =============================
 
@@ -332,7 +336,24 @@ Route::group(['prefix' => 'api/v1'], function () {
       });
     });
 
-    
+    //=================================== User Home =============================
 
-});
+    Route::group(['prefix' => 'home' , 'middleware' => ['user.auth']], function () {
+        
+      Route::group(['controller' => HomeController::class], function () {
+
+        Route::post('/get-daily-statuses' , 'getDailyStatuses');
+
+        Route::post('/search-daily-statuses' , 'searchDailyStatuses');
+
+        Route::post('/set-daily-status' , 'setDailyStatus');
+
+        Route::post('/remove-daily-status' , 'removeDailyStatus');
+
+        Route::post('/get-current-daily-status' , 'getCurrentDailyStatus');
+
+      });
+    });
+
+  });  
 
