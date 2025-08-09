@@ -41,6 +41,18 @@ class StoryMedia extends Model
 
     public function getFullUrlAttribute()
     {
-        return config('app.url') . $this->url;
+        $url = $this->url ?? '';
+
+        // Ensure URLs are standardized to start with "/public/storage" for story media
+        // If current url starts with "/storage" or "storage", prefix with "/public"
+        if (preg_match('#^/?storage/#', $url)) {
+            $url = '/' . ltrim($url, '/');
+            $url = '/public' . $url; // now "/public/storage/..."
+        }
+
+        // If it already starts with "/public/storage" leave as-is
+        // Otherwise, leave existing $url unchanged
+
+        return config('app.url') . $url;
     }
 } 

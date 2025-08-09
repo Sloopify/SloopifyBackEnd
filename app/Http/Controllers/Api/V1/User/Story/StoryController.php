@@ -77,7 +77,7 @@ class StoryController extends Controller
                  return [
                      'id' => $media->id,
                      'type' => $media->type,
-                     'url' => $media->full_url,
+                     'url' =>  $media->full_url,
                      'order' => (float) $media->order,
                      'rotate_angle' => (float) $media->rotate_angle,
                      'scale' => (float) $media->scale,
@@ -552,9 +552,15 @@ class StoryController extends Controller
         foreach ($mediaItems as $index => $mediaItem) {
             $file = $mediaItem['file'];
             $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('stories/' . $story->id, $filename, 'public');
+                $path = $file->storeAs('stories/' . $story->id, $filename, 'public');
 
-            StoryMedia::create([
+                // Normalize URL to begin with /public/storage for consistency
+                $storageUrl = Storage::url($path); // typically "/storage/..."
+                if (strpos($storageUrl, '/storage/') === 0) {
+                    $storageUrl = '/public' . $storageUrl; // "/public/storage/..."
+                }
+
+                StoryMedia::create([
                 'story_id' => $story->id,
                 'type' => strpos($file->getMimeType(), 'image') !== false ? 'image' : 'video',
                 'filename' => $filename,
@@ -562,7 +568,7 @@ class StoryController extends Controller
                 'mime_type' => $file->getMimeType(),
                 'size' => $file->getSize(),
                 'path' => $path,
-                'url' => Storage::url($path),
+                    'url' => $storageUrl,
                 'order' => $mediaItem['order'] ?? ($index + 1),
                 'rotate_angle' => $mediaItem['rotate_angle'] ?? 0.0,
                 'scale' => $mediaItem['scale'] ?? 1.0,
