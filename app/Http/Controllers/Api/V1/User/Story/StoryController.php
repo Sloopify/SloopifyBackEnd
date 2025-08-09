@@ -1527,21 +1527,50 @@ class StoryController extends Controller
                 'mute_replies' => 'nullable|boolean',
                 'mute_poll_votes' => 'nullable|boolean',
                 'mute_all' => 'nullable|boolean',
-                'mute_story_notifications' => 'nullable|boolean'
+                'mute_story_notifications' => 'nullable|boolean',
+                // New: global mute for all my stories
+                'mute_all_for_me' => 'nullable|boolean'
             ]);
 
             $user = Auth::guard('user')->user();
 
-            // Check if at least one of story_id or muted_user_id is provided
-            if (!isset($validatedData['story_id']) && !isset($validatedData['muted_user_id'])) {
+            // Check if at least one of story_id or muted_user_id or mute_all_for_me is provided
+            if (!isset($validatedData['story_id']) && !isset($validatedData['muted_user_id']) && !array_key_exists('mute_all_for_me', $validatedData)) {
                 return response()->json([
                     'status_code' => 422,
                     'success' => false,
-                    'message' => 'Either story_id or muted_user_id must be provided'
+                    'message' => 'Either story_id, muted_user_id, or mute_all_for_me must be provided'
                 ], 422);
             }
 
             DB::beginTransaction();
+
+            // Option 0: Global mute/unmute for all my stories (no story_id or muted_user_id expected)
+            if (array_key_exists('mute_all_for_me', $validatedData)) {
+                // Ensure no conflicting identifiers are provided
+                if (isset($validatedData['story_id']) || isset($validatedData['muted_user_id'])) {
+                    return response()->json([
+                        'status_code' => 422,
+                        'success' => false,
+                        'message' => 'Do not provide story_id or muted_user_id when using mute_all_for_me'
+                    ], 422);
+                }
+
+                StoryNotificationSetting::updateOrCreate(
+                    [
+                        'story_owner_id' => $user->id,
+                        'story_id' => null,
+                        'muted_user_id' => null
+                    ],
+                    [
+                        // When muting globally, set all relevant flags together
+                        'mute_story_notifications' => (bool) ($validatedData['mute_all_for_me']),
+                        'mute_replies' => (bool) ($validatedData['mute_all_for_me']),
+                        'mute_poll_votes' => (bool) ($validatedData['mute_all_for_me']),
+                        'mute_all' => (bool) ($validatedData['mute_all_for_me'])
+                    ]
+                );
+            }
 
             // Option 1: Mute notifications from specific friend for all your stories
             if (isset($validatedData['muted_user_id']) && !isset($validatedData['story_id'])) {
