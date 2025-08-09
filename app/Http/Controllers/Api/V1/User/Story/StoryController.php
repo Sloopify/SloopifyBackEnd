@@ -175,6 +175,11 @@ class StoryController extends Controller
             foreach ($data as $key => $value) {
                 if (is_array($value)) {
                     $converted[$key] = $this->forceFloatValues($value);
+                } elseif ($this->shouldKeepAsBoolean($key)) {
+                    // Explicitly cast to boolean when key requires boolean type
+                    $converted[$key] = (bool) $value;
+                } elseif (is_bool($value)) {
+                    $converted[$key] = $value;
                 } elseif (is_numeric($value)) {
                     // Skip converting IDs and other fields that should remain integers
                     if ($this->shouldKeepAsInteger($key)) {
@@ -205,6 +210,16 @@ class StoryController extends Controller
         ];
 
         return in_array($key, $integerFields);
+    }
+
+    private function shouldKeepAsBoolean($key)
+    {
+        // Fields that should be booleans
+        $booleanFields = [
+            'isDay',
+        ];
+
+        return in_array($key, $booleanFields);
     }
 
     private function mapStoryPollVote($vote, $user = null)
