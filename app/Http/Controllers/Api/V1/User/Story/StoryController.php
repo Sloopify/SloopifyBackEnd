@@ -83,7 +83,10 @@ class StoryController extends Controller
                      'scale' => (float) $media->scale,
                      'dx' => (float) $media->dx,
                      'dy' => (float) $media->dy,
-                     'metadata' => $media->metadata
+                     // Ensure metadata numeric values (e.g., width, height) are floats
+                     'metadata' => is_string($media->metadata)
+                         ? $this->convertNumericValuesToDouble(json_decode($media->metadata, true))
+                         : $this->convertNumericValuesToDouble($media->metadata)
                  ];
              }),
              'views_count' => $story->views_count,
@@ -98,7 +101,7 @@ class StoryController extends Controller
              'is_expired' => $story->is_expired,
              'created_at' => $story->created_at
          ];
-    }
+     }
 
     private function mapStoryAudio($audio, $user = null)
     {
