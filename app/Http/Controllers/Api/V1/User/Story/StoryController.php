@@ -204,9 +204,10 @@ class StoryController extends Controller
     {
         // Fields that should remain as integers
         $integerFields = [
-            'id', 'user_id', 'story_id', 'feeling_id', 'audio_id', 'poll_id',
-            'option_id', 'viewer_id', 'reply_id', 'vote_id', 'place_id',
-            'weather_code', 'votes', 'total_votes', 'percentage' , 'views_count' , 'replies_count'
+            'id', 'user_id', 'story_id', 'feeling_id', 'audio_id', 'poll_id', 'location_id',
+            'option_id', 'viewer_id', 'reply_id', 'vote_id', 'place_id', 'friend_id',
+            'weather_code', 'votes', 'total_votes', 'percentage', 'views_count', 'replies_count',
+            'code'
         ];
 
         return in_array($key, $integerFields);
