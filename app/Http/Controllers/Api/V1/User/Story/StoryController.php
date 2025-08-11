@@ -1730,7 +1730,8 @@ class StoryController extends Controller
             }
 
             // Validate selected option
-            $pollOptions = $story->poll_element['poll_options'] ?? [];
+            $pollElement = is_string($story->poll_element) ? json_decode($story->poll_element, true) : $story->poll_element;
+            $pollOptions = $pollElement['poll_options'] ?? [];
             $validOptionIds = array_column($pollOptions, 'option_id');
             
             if (!in_array($validatedData['selected_option'], $validOptionIds)) {
