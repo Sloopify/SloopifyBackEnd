@@ -34,19 +34,6 @@ class Story extends Model
     ];
 
     protected $casts = [
-        'text_elements' => 'array',
-        'background_color' => 'array',
-        'specific_friends' => 'array',
-        'friend_except' => 'array',
-        'location_element' => 'array',
-        'mentions_elements' => 'array',
-        'clock_element' => 'array',
-        'feeling_element' => 'array',
-        'temperature_element' => 'array',
-        'audio_element' => 'array',
-        'poll_element' => 'array',
-        'drawing_elements' => 'array',
-        'gif_element' => 'array',
         'expires_at' => 'datetime',
         'is_video_muted' => 'boolean',
         'is_story_muted_notification' => 'boolean'
@@ -163,24 +150,38 @@ class Story extends Model
             return null;
         }
 
-        $pollOptions = $this->poll_element['poll_options'] ?? [];
+        // Handle both array and JSON string formats
+        $pollElement = is_string($this->poll_element) ? json_decode($this->poll_element, true) : $this->poll_element;
+        
+        if (!$pollElement || !is_array($pollElement)) {
+            return null;
+        }
+
+        $pollOptions = $pollElement['poll_options'] ?? [];
+        if (!is_array($pollOptions)) {
+            return null;
+        }
+
         $votes = $this->pollVotes()->get();
         $totalVotes = $votes->count();
 
         $results = [];
         foreach ($pollOptions as $pollOption) {
+            if (!is_array($pollOption) || !isset($pollOption['option_id'])) {
+                continue;
+            }
             $optionId = $pollOption['option_id'];
             $optionVotes = $votes->where('selected_options', 'like', '%"' . $optionId . '"%')->count();
             $results[] = [
                 'option_id' => $optionId,
-                'option_name' => $pollOption['option_name'],
+                'option_name' => $pollOption['option_name'] ?? '',
                 'votes' => $optionVotes,
                 'percentage' => $totalVotes > 0 ? round(($optionVotes / $totalVotes) * 100, 1) : 0
             ];
         }
 
         return [
-            'question' => $this->poll_element['question'],
+            'question' => $pollElement['question'] ?? '',
             'poll_options' => $results,
             'total_votes' => $totalVotes
         ];

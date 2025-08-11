@@ -47,21 +47,38 @@ class StoryController extends Controller
          
          // Helper function to decode JSON and convert numeric values
          $decodeAndConvert = function($data) {
+             // Handle null values
+             if (is_null($data)) {
+                 return null;
+             }
+             
+             // If it's a string, decode it first
              if (is_string($data)) {
                  $decoded = json_decode($data, true);
+                 // If decoding failed, return null
+                 if (json_last_error() !== JSON_ERROR_NONE) {
+                     return null;
+                 }
                  return $this->convertNumericValuesToDouble($decoded);
              }
-             return $this->convertNumericValuesToDouble($data);
+             
+             // If it's already an array, process it
+             if (is_array($data)) {
+                 return $this->convertNumericValuesToDouble($data);
+             }
+             
+             // For any other type, return as is
+             return $data;
          };
          
          return [
              'id' => $story->id,
              'user' => app(AuthController::class)->mapUserDetails($story->user),
              'privacy' => $story->privacy,
-             'specific_friends' => $story->specific_friends,
-             'friend_except' => $story->friend_except,
+             'specific_friends' => $decodeAndConvert($story->specific_friends),
+             'friend_except' => $decodeAndConvert($story->friend_except),
              'text_elements' => $decodeAndConvert($story->text_elements),
-             'background_color' => is_string($story->background_color) ? json_decode($story->background_color, true) : $story->background_color,
+             'background_color' => $decodeAndConvert($story->background_color),
              'mentions_elements' => $decodeAndConvert($story->mentions_elements),
              'clock_element' => $decodeAndConvert($story->clock_element),
              'feeling_element' => $decodeAndConvert($story->feeling_element),
@@ -1730,7 +1747,8 @@ class StoryController extends Controller
             }
 
             // Validate selected option
-            $pollOptions = $story->poll_element['poll_options'] ?? [];
+            $pollElement = is_string($story->poll_element) ? json_decode($story->poll_element, true) : $story->poll_element;
+            $pollOptions = $pollElement['poll_options'] ?? [];
             $validOptionIds = array_column($pollOptions, 'option_id');
             
             if (!in_array($validatedData['selected_option'], $validOptionIds)) {
