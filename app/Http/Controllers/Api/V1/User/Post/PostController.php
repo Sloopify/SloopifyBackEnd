@@ -857,6 +857,53 @@ class PostController extends Controller
         }
     }
 
+    public function getFeelingById(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'feeling_id' => 'required|integer|exists:post_feelings,id'
+            ]);
+
+            $feeling = PostFeeling::where('id', $validatedData['feeling_id'])
+                ->where('status', 'active')
+                ->first();
+
+            if (!$feeling) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Feeling not found or inactive'
+                ], 404);
+            }
+
+            $mappedFeeling = $this->mapFeelings(collect([$feeling]))->first();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Feeling retrieved successfully',
+                'data' => [
+                    'feeling' => $mappedFeeling
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve feeling',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function getActivityCategory(Request $request)
     {
         try {

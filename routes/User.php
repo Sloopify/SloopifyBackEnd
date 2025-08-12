@@ -103,6 +103,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/get-feeling' , 'getFeeling');
 
+        Route::post('/get-feeling-by-id' , 'getFeelingById');
+
         Route::post('/get-activity-category' , 'getActivityCategory');
 
         Route::post('/get-activity-by-category-name' , 'getActivityByCategoryName');
