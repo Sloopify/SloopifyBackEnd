@@ -1775,6 +1775,9 @@ class StoryController extends Controller
 
             DB::commit();
 
+            // Refresh the story model to get updated poll results
+            $story->refresh();
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
