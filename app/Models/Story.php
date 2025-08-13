@@ -171,7 +171,10 @@ class Story extends Model
                 continue;
             }
             $optionId = $pollOption['option_id'];
-            $optionVotes = $votes->where('selected_options', 'like', '%"' . $optionId . '"%')->count();
+            // Count votes where the selected_options array contains this option_id
+            $optionVotes = $votes->filter(function($vote) use ($optionId) {
+                return is_array($vote->selected_options) && in_array($optionId, $vote->selected_options);
+            })->count();
             $results[] = [
                 'option_id' => $optionId,
                 'option_name' => $pollOption['option_name'] ?? '',
