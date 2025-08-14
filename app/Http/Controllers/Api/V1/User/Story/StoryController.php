@@ -41,6 +41,186 @@ class StoryController extends Controller
         }
     }
 
+    public function generateShareUrl($storyId)
+    {
+        // Generate a unique share URL using the story ID and a random string
+        $baseUrl = config('app.url');
+        $uniqueId = base64_encode($storyId . '_' . time() . '_' . rand(1000, 9999));
+        $uniqueId = str_replace(['+', '/', '='], ['-', '_', ''], $uniqueId); // URL-safe base64
+        
+        return $baseUrl . '/story/' . $uniqueId;
+    }
+
+    public function isMobileAppRequest(Request $request)
+    {
+        $userAgent = $request->header('User-Agent', '');
+        $acceptHeader = $request->header('Accept', '');
+        
+        // Check for custom headers that mobile app might send
+        $appVersion = $request->header('X-App-Version');
+        $appPlatform = $request->header('X-App-Platform');
+        
+        // Check if it's a mobile app request
+        if ($appVersion || $appPlatform) {
+            return true;
+        }
+        
+        // Check for JSON accept header (mobile apps typically request JSON)
+        if (strpos($acceptHeader, 'application/json') !== false && 
+            strpos($acceptHeader, 'text/html') === false) {
+            return true;
+        }
+        
+        // Check for Flutter/Dart user agent
+        if (strpos($userAgent, 'Dart') !== false || strpos($userAgent, 'Flutter') !== false) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    public function isWebBrowserRequest(Request $request)
+    {
+        $userAgent = $request->header('User-Agent', '');
+        $acceptHeader = $request->header('Accept', '');
+        
+        // Check for common web browser user agents
+        $browserPatterns = [
+            'Chrome', 'Firefox', 'Safari', 'Edge', 'Opera', 'MSIE', 'Trident'
+        ];
+        
+        foreach ($browserPatterns as $pattern) {
+            if (strpos($userAgent, $pattern) !== false) {
+                return true;
+            }
+        }
+        
+        // Check for HTML accept header
+        if (strpos($acceptHeader, 'text/html') !== false) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    public function isSocialMediaRequest(Request $request)
+    {
+        $userAgent = $request->header('User-Agent', '');
+        
+        // Check for social media crawlers
+        $socialMediaPatterns = [
+            'facebookexternalhit', 'WhatsApp', 'Twitterbot', 'LinkedInBot',
+            'TelegramBot', 'Instagram', 'Snapchat', 'Pinterest'
+        ];
+        
+        foreach ($socialMediaPatterns as $pattern) {
+            if (stripos($userAgent, $pattern) !== false) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    private function mapStoryForMobile($story)
+    {
+        // Simplified story data for mobile app
+        return [
+            'id' => $story->id,
+            'title' => $this->generateStoryTitle($story),
+            'description' => $this->generateStoryDescription($story),
+            'image_url' => $this->getStoryMainImage($story),
+            'user' => [
+                'id' => $story->user->id,
+                'name' => $story->user->first_name . ' ' . $story->user->last_name,
+                'image' => $story->user->image
+            ],
+            'created_at' => $story->created_at,
+            'expires_at' => $story->expires_at,
+            'is_expired' => $story->is_expired,
+            'share_url' => $story->share_url,
+            'deep_link' => 'myapp://story/' . $story->id
+        ];
+    }
+
+    private function generateStoryTitle($story)
+    {
+        // Generate a title based on story content
+        if ($story->text_elements) {
+            $textElements = is_string($story->text_elements) 
+                ? json_decode($story->text_elements, true) 
+                : $story->text_elements;
+            
+            if (is_array($textElements) && !empty($textElements)) {
+                $firstText = $textElements[0]['text'] ?? '';
+                return mb_substr($firstText, 0, 50) . (mb_strlen($firstText) > 50 ? '...' : '');
+            }
+        }
+        
+        return $story->user->first_name . "'s Story";
+    }
+
+    private function generateStoryDescription($story)
+    {
+        // Generate a description based on story content
+        $description = '';
+        
+        if ($story->text_elements) {
+            $textElements = is_string($story->text_elements) 
+                ? json_decode($story->text_elements, true) 
+                : $story->text_elements;
+            
+            if (is_array($textElements)) {
+                foreach ($textElements as $element) {
+                    if (isset($element['text'])) {
+                        $description .= $element['text'] . ' ';
+                    }
+                }
+            }
+        }
+        
+        if (empty($description)) {
+            $description = 'Check out this story from ' . $story->user->first_name . ' ' . $story->user->last_name;
+        }
+        
+        return trim($description);
+    }
+
+    private function getStoryMainImage($story)
+    {
+        // Get the first image from story media
+        if ($story->media && $story->media->count() > 0) {
+            foreach ($story->media as $media) {
+                if ($media->type === 'image') {
+                    return $media->full_url;
+                }
+            }
+        }
+        
+        // Return default image if no media
+        return $story->user->image ?? config('app.url') . '/images/default-story.jpg';
+    }
+
+    private function renderStoryWebView($story)
+    {
+        // Prepare data for the Blade view
+        $viewData = [
+            'story' => $story,
+            'title' => $this->generateStoryTitle($story),
+            'description' => $this->generateStoryDescription($story),
+            'image_url' => $this->getStoryMainImage($story),
+            'user_name' => $story->user->first_name . ' ' . $story->user->last_name,
+            'user_image' => $story->user->image,
+            'created_at' => $story->created_at->format('M d, Y'),
+            'deep_link' => 'myapp://story/' . $story->id,
+            'app_store_url' => 'https://apps.apple.com/app/your-app-id', // Replace with actual app store URL
+            'play_store_url' => 'https://play.google.com/store/apps/details?id=your.app.id', // Replace with actual play store URL
+            'share_url' => $story->share_url
+        ];
+        
+        return view('story.shared', $viewData);
+    }
+
     private function mapStory($story, $currentUser = null)
      {
          $currentUser = $currentUser ?: Auth::guard('user')->user();
@@ -109,11 +289,12 @@ class StoryController extends Controller
              'views_count' => $story->views_count,
              'replies_count' => $story->replies_count,
             // Owner should always be considered as having viewed their own story
-            'has_viewed' => ($story->user_id === $currentUser->id)
+            'has_viewed' => ($currentUser && $story->user_id === $currentUser->id)
                 ? true
-                : $story->hasBeenViewedBy($currentUser->id),
-             'has_voted' => $story->hasVotedBy($currentUser->id),
+                : ($currentUser ? $story->hasBeenViewedBy($currentUser->id) : false),
+             'has_voted' => $currentUser ? $story->hasVotedBy($currentUser->id) : false,
              'poll_results' => $story->poll_results,
+             'share_url' => $story->share_url,
              'expires_at' => $story->expires_at,
              'is_expired' => $story->is_expired,
              'created_at' => $story->created_at
@@ -502,6 +683,10 @@ class StoryController extends Controller
             $story->status = 'active';
             $story->save();
 
+            // Generate and save share URL after the story is created
+            $story->share_url = $this->generateShareUrl($story->id);
+            $story->save();
+
             // Handle media uploads
             if (!empty($validatedData['media'])) {
                 $this->handleStoryMediaUploads($story, $validatedData['media']);
@@ -570,7 +755,7 @@ class StoryController extends Controller
         foreach ($mediaItems as $index => $mediaItem) {
             $file = $mediaItem['file'];
             $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                $path = $file->storeAs('stories/' . $story->id, $filename, 'public');
+            $path = $file->storeAs('stories/' . $story->id, $filename, 'public');
 
                 // Normalize URL to begin with /public/storage for consistency
                 $storageUrl = Storage::url($path); // typically "/storage/..."
@@ -578,7 +763,7 @@ class StoryController extends Controller
                     $storageUrl = '/public' . $storageUrl; // "/public/storage/..."
                 }
 
-                StoryMedia::create([
+            StoryMedia::create([
                 'story_id' => $story->id,
                 'type' => strpos($file->getMimeType(), 'image') !== false ? 'image' : 'video',
                 'filename' => $filename,
@@ -2113,6 +2298,68 @@ class StoryController extends Controller
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to unhide story',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function viewSharedStory(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'share_url' => 'required|string'
+            ]);
+
+            // Find story by share URL - search for the complete URL
+            $baseUrl = config('app.url');
+            $fullShareUrl = $baseUrl . '/story/' . $validatedData['share_url'];
+            
+            $story = Story::with(['user', 'media', 'views', 'replies', 'pollVotes'])
+                ->where('share_url', $fullShareUrl)
+                ->where('status', 'active') // Only check status, not expiration for shared stories
+                ->first();
+
+            if (!$story) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Story not found'
+                ], 404);
+            }
+
+            // Check if story is public or accessible
+            if ($story->privacy !== 'public') {
+                return response()->json([
+                    'status_code' => 403,
+                    'success' => false,
+                    'message' => 'This story is not publicly accessible'
+                ], 403);
+            }
+
+            // Detect request source
+            $isMobileApp = $this->isMobileAppRequest($request);
+            $isWebBrowser = $this->isWebBrowserRequest($request);
+            $isSocialMedia = $this->isSocialMediaRequest($request);
+
+            // Return appropriate response based on request source
+            if ($isMobileApp) {
+                // Return JSON for mobile app
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'Story retrieved successfully',
+                    'data' => $this->mapStoryForMobile($story)
+                ], 200, [], JSON_PRESERVE_ZERO_FRACTION);
+            } else {
+                // Return HTML view for web browsers and social media
+                return $this->renderStoryWebView($story);
+            }
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve shared story',
                 'error' => $e->getMessage()
             ], 500);
         }
