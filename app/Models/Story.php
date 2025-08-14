@@ -30,7 +30,8 @@ class Story extends Model
         'is_video_muted',
         'expires_at',
         'status',
-        'is_story_muted_notification'
+        'is_story_muted_notification',
+        'share_url'
     ];
 
     protected $casts = [

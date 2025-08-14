@@ -46,6 +46,8 @@ return new class extends Migration
             $table->timestamp('expires_at');
             $table->enum('status', ['active', 'expired', 'deleted'])->default('active');
             
+            $table->string('share_url')->nullable(); // Unique share URL for public story access
+            
             $table->boolean('is_story_muted_notification')->default(false);
 
             $table->timestamps();
