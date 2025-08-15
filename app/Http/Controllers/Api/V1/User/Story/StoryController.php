@@ -264,7 +264,7 @@ class StoryController extends Controller
              'feeling_element' => $decodeAndConvert($story->feeling_element),
              'temperature_element' => $decodeAndConvert($story->temperature_element),
              'audio_element' => $decodeAndConvert($story->audio_element),
-             'poll_element' => $decodeAndConvert($story->poll_element),
+             'poll_element' => $this->updatePollElementWithVotes($decodeAndConvert($story->poll_element), $story),
              'location_element' => $decodeAndConvert($story->location_element),
              'drawing_elements' => $decodeAndConvert($story->drawing_elements),
              'gif_element' => $decodeAndConvert($story->gif_element),
@@ -429,6 +429,30 @@ class StoryController extends Controller
             'selected_options' => $vote->selected_options,
             'created_at' => $vote->created_at
         ];
+    }
+
+    private function updatePollElementWithVotes($pollElement, $story)
+    {
+        if (!$pollElement || !is_array($pollElement) || !isset($pollElement['poll_options'])) {
+            return $pollElement;
+        }
+
+        // Get the poll votes for this story
+        $votes = $story->pollVotes()->get();
+        
+        // Update each poll option with the current vote count
+        foreach ($pollElement['poll_options'] as &$option) {
+            if (isset($option['option_id'])) {
+                $optionId = $option['option_id'];
+                // Count votes where the selected_options array contains this option_id
+                $optionVotes = $votes->filter(function($vote) use ($optionId) {
+                    return is_array($vote->selected_options) && in_array($optionId, $vote->selected_options);
+                })->count();
+                $option['votes'] = $optionVotes;
+            }
+        }
+
+        return $pollElement;
     }
 
     public function createStory(Request $request)
@@ -1290,15 +1314,16 @@ class StoryController extends Controller
                 'success' => true,
                 'message' => 'Poll results retrieved successfully',
                 'data' => [
-                'poll_votes' => $mappedPollVotes,
-                'pagination' => [
-                    'current_page' => $pollVotes->currentPage(),
-                    'last_page' => $pollVotes->lastPage(),
-                    'per_page' => $pollVotes->perPage(),
-                    'total' => $pollVotes->total(),
-                    'from' => $pollVotes->firstItem(),
-                    'to' => $pollVotes->lastItem(),
-                    'has_more_pages' => $pollVotes->hasMorePages()
+                    'poll_results' => $story->poll_results,
+                    'poll_votes' => $mappedPollVotes,
+                    'pagination' => [
+                        'current_page' => $pollVotes->currentPage(),
+                        'last_page' => $pollVotes->lastPage(),
+                        'per_page' => $pollVotes->perPage(),
+                        'total' => $pollVotes->total(),
+                        'from' => $pollVotes->firstItem(),
+                        'to' => $pollVotes->lastItem(),
+                        'has_more_pages' => $pollVotes->hasMorePages()
                     ]
                 ]
             ], 200);
@@ -1351,15 +1376,16 @@ class StoryController extends Controller
                 'success' => true,
                 'message' => 'Poll results retrieved successfully',
                 'data' => [
+                    'poll_results' => $story->poll_results,
                     'poll_votes' => $mappedPollVotes,
-                'pagination' => [
-                    'current_page' => $pollVotes->currentPage(),
-                    'last_page' => $pollVotes->lastPage(),
-                    'per_page' => $pollVotes->perPage(),
-                    'total' => $pollVotes->total(),
-                    'from' => $pollVotes->firstItem(),
-                    'to' => $pollVotes->lastItem(),
-                    'has_more_pages' => $pollVotes->hasMorePages()
+                    'pagination' => [
+                        'current_page' => $pollVotes->currentPage(),
+                        'last_page' => $pollVotes->lastPage(),
+                        'per_page' => $pollVotes->perPage(),
+                        'total' => $pollVotes->total(),
+                        'from' => $pollVotes->firstItem(),
+                        'to' => $pollVotes->lastItem(),
+                        'has_more_pages' => $pollVotes->hasMorePages()
                     ]
                 ]
             ], 200);
