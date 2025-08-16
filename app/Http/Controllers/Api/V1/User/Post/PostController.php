@@ -5716,11 +5716,12 @@ class PostController extends Controller
                 ->pluck('post_id')
                 ->flip();
 
-            $mapped = $slice->map(function($post) use ($commentCounts, $reactionCountsFriend, $reactionCountsSuggested, $savedPostIds) {
+            $mapped = $slice->map(function($post) use ($commentCounts, $reactionCountsFriend, $reactionCountsSuggested, $savedPostIds, $friendIds) {
                 $data = $post->toArray();
                 $data['comments_count'] = (int) ($commentCounts[$post->id] ?? 0);
                 $data['reactions_count'] = (int) (($reactionCountsFriend[$post->id] ?? 0) + ($reactionCountsSuggested[$post->id] ?? 0));
                 $data['is_saved'] = $savedPostIds->has($post->id);
+                $data['is_user_friend'] = $friendIds->contains($post->user_id);
                 // Date fields already present: created_at, updated_at
                 return $data;
             });
