@@ -33,6 +33,7 @@ class PostMedia extends Model
 
     protected $casts = [
         'metadata' => 'array',
+        'rotate_angle' => 'float',
     ];
 
     public function post()
