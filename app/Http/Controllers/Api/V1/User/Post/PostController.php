@@ -5568,6 +5568,197 @@ class PostController extends Controller
     }
 
 
+    public function getFeed(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:50'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $page = $validated['page'] ?? 1;
+            $perPage = $validated['per_page'] ?? 20;
+
+            // Gather friend ids
+            $friendships = Friendship::where(function($q) use ($user) {
+                    $q->where('user_id', $user->id)
+                      ->orWhere('friend_id', $user->id);
+                })
+                ->where('status', 'accepted')
+                ->get();
+
+            $friendIds = $friendships->map(function($f) use ($user) {
+                return $f->user_id == $user->id ? $f->friend_id : $f->user_id;
+            })->unique()->values();
+
+            // Base query for posts visible to current user
+            $visiblePostsQuery = Post::with(['user', 'media', 'poll', 'personalOccasion'])
+                ->approved()
+                ->notExpired()
+                ->visibleTo($user->id);
+
+            // 1) Direct friends' posts
+            $friendsPosts = (clone $visiblePostsQuery)
+                ->whereIn('user_id', $friendIds)
+                ->inRandomOrder()
+                ->take($perPage * 2)
+                ->get();
+
+            // 2) Posts friends interacted with (commented on or interest feedback)
+            $friendInteractedPostIds = collect();
+            if ($friendIds->isNotEmpty()) {
+                $commented = \DB::table('post_comments')
+                    ->whereIn('user_id', $friendIds)
+                    ->pluck('post_id');
+                $interested = \DB::table('post_interest_feedback')
+                    ->whereIn('user_id', $friendIds)
+                    ->pluck('post_id');
+                $friendInteractedPostIds = $commented->merge($interested)->unique()->values();
+            }
+
+            $friendInteractedPosts = $friendInteractedPostIds->isEmpty()
+                ? collect()
+                : (clone $visiblePostsQuery)
+                    ->whereIn('id', $friendInteractedPostIds)
+                    ->inRandomOrder()
+                    ->take($perPage)
+                    ->get();
+
+            // 3) Personalized suggested posts (interests + demographics)
+            $userInterests = $user->userInterests()->pluck('interests.id');
+            $gender = $user->gender;
+            $age = $user->age;
+
+            $suggestedQuery = (clone $visiblePostsQuery)
+                ->whereNotIn('user_id', $friendIds->push($user->id))
+                ->where('privacy', 'public');
+
+            // Boost posts by users with overlapping interests
+            if ($userInterests->isNotEmpty()) {
+                $suggestedUserIdsByInterests = \DB::table('user_interests')
+                    ->whereIn('interest_id', $userInterests)
+                    ->where('user_id', '!=', $user->id)
+                    ->pluck('user_id');
+                $suggestedQuery->whereIn('user_id', $suggestedUserIdsByInterests);
+            }
+
+            // Light demographic alignment (optional filters if present)
+            $suggestedQuery->when(!empty($gender), function($q) use ($gender) {
+                $q->whereHas('user', function($uq) use ($gender) {
+                    $uq->where('gender', $gender);
+                });
+            });
+            $suggestedQuery->when(!empty($age), function($q) use ($age) {
+                $q->whereHas('user', function($uq) use ($age) {
+                    $uq->whereBetween('age', [max(13, $age - 5), $age + 5]);
+                });
+            });
+
+            $suggestedPosts = $suggestedQuery
+                ->inRandomOrder()
+                ->take($perPage)
+                ->get();
+
+            // 4) Posts similar to ones user marked interested/not interested (use positive ones)
+            $likedPostOwnerIds = \DB::table('post_interest_feedback')
+                ->where('user_id', $user->id)
+                ->where('interest_type', 'interested')
+                ->pluck('post_owner_id');
+
+            $similarPosts = $likedPostOwnerIds->isEmpty() ? collect() : (clone $visiblePostsQuery)
+                ->whereIn('user_id', $likedPostOwnerIds)
+                ->inRandomOrder()
+                ->take($perPage)
+                ->get();
+
+            // Merge pools and de-duplicate by id
+            $pool = $friendsPosts
+                ->merge($friendInteractedPosts)
+                ->merge($suggestedPosts)
+                ->merge($similarPosts)
+                ->unique('id')
+                ->values();
+
+            // Shuffle to keep it unordered and random per request
+            $pool = $pool->shuffle();
+
+            // Paginate manually from the shuffled pool
+            $total = $pool->count();
+            $offset = ($page - 1) * $perPage;
+            $slice = $pool->slice($offset, $perPage)->values();
+
+            // Enrich posts: comment_count, reaction_count (approx via reactions on comments? none for posts), is_saved
+            $postIds = $slice->pluck('id');
+            $commentCounts = \DB::table('post_comments')
+                ->whereIn('post_id', $postIds)
+                ->whereNull('parent_comment_id')
+                ->where('is_deleted', false)
+                ->select('post_id', \DB::raw('count(*) as cnt'))
+                ->groupBy('post_id')
+                ->pluck('cnt', 'post_id');
+
+            // Use interest feedback on posts as proxy for reactions
+            $reactionCountsFriend = \DB::table('post_interest_feedback')
+                ->whereIn('post_id', $postIds)
+                ->select('post_id', \DB::raw('count(*) as cnt'))
+                ->groupBy('post_id')
+                ->pluck('cnt', 'post_id');
+            $reactionCountsSuggested = \DB::table('suggested_post_interest_feedback')
+                ->whereIn('post_id', $postIds)
+                ->select('post_id', \DB::raw('count(*) as cnt'))
+                ->groupBy('post_id')
+                ->pluck('cnt', 'post_id');
+
+            $savedPostIds = \DB::table('saved_posts')
+                ->where('user_id', $user->id)
+                ->whereIn('post_id', $postIds)
+                ->pluck('post_id')
+                ->flip();
+
+            $mapped = $slice->map(function($post) use ($commentCounts, $reactionCountsFriend, $reactionCountsSuggested, $savedPostIds) {
+                $data = $post->toArray();
+                $data['comments_count'] = (int) ($commentCounts[$post->id] ?? 0);
+                $data['reactions_count'] = (int) (($reactionCountsFriend[$post->id] ?? 0) + ($reactionCountsSuggested[$post->id] ?? 0));
+                $data['is_saved'] = $savedPostIds->has($post->id);
+                // Date fields already present: created_at, updated_at
+                return $data;
+            });
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Feed retrieved successfully',
+                'data' => [
+                    'posts' => $mapped,
+                    'pagination' => [
+                        'current_page' => $page,
+                        'per_page' => $perPage,
+                        'total' => $total,
+                        'last_page' => $total > 0 ? (int)ceil($total / $perPage) : 1,
+                        'from' => $total ? $offset + 1 : null,
+                        'to' => $total ? min($offset + $perPage, $total) : null,
+                        'has_more_pages' => $offset + $perPage < $total
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve feed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
 
@@ -5707,60 +5898,6 @@ class PostController extends Controller
         }
     }
 
-    public function getUserPosts(Request $request, $userId = null)
-    {
-        try {
-            $validatedData = $request->validate([
-                'page' => 'nullable|integer|min:1',
-                'per_page' => 'nullable|integer|min:1|max:100'
-            ]);
-
-            $targetUserId = $userId ?? Auth::guard('user')->user()->id;
-            $perPage = $validatedData['per_page'] ?? 20;
-            
-            $posts = Post::with(['user', 'media', 'poll', 'personalOccasion'])
-                ->where('user_id', $targetUserId)
-                ->approved()
-                ->notExpired()
-                ->visibleTo(Auth::guard('user')->user()->id)
-                ->orderBy('created_at', 'desc')
-                ->paginate($perPage);
-
-            return response()->json([
-                'status_code' => 200,
-                'success' => true,
-                'message' => 'User posts retrieved successfully',
-                'data' => [
-                    'posts' => $posts->items(),
-                    'pagination' => [
-                        'current_page' => $posts->currentPage(),
-                        'last_page' => $posts->lastPage(),
-                        'per_page' => $posts->perPage(),
-                        'total' => $posts->total(),
-                        'from' => $posts->firstItem(),
-                        'to' => $posts->lastItem(),
-                        'has_more_pages' => $posts->hasMorePages()
-                    ]
-                ]
-            ], 200);
-
-        } catch (ValidationException $e) {
-            return response()->json([
-                'status_code' => 422,
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (Exception $e) {
-            return response()->json([
-                'status_code' => 500,
-                'success' => false,
-                'message' => 'Failed to retrieve user posts',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
     public function checkServerCapabilities()
     {
         try {
@@ -5797,7 +5934,5 @@ class PostController extends Controller
             ], 500);
         }
     }
- 
- 
 
 }

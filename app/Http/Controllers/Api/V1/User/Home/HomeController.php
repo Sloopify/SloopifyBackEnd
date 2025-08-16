@@ -10,6 +10,8 @@ use App\Models\DailyStatus;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
 use Exception;
+use App\Http\Controllers\Api\V1\User\Story\StoryController;
+use App\Http\Controllers\Api\V1\User\Post\PostController;
 
 class HomeController extends Controller
 {
@@ -182,6 +184,116 @@ class HomeController extends Controller
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to retrieve daily statuses',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getHome(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'stories_page' => 'nullable|integer|min:1',
+                'stories_per_page' => 'nullable|integer|min:1|max:100',
+                'feed_page' => 'nullable|integer|min:1',
+                'feed_per_page' => 'nullable|integer|min:1|max:50',
+                'daily_statuses_page' => 'nullable|integer|min:1',
+                'daily_statuses_per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Initialize controllers
+            $storyController = app(StoryController::class);
+            $postController = app(PostController::class);
+
+            // Prepare request objects for each controller method
+            $storiesRequest = new Request([
+                'page' => $validatedData['stories_page'] ?? 1,
+                'per_page' => $validatedData['stories_per_page'] ?? 20
+            ]);
+
+            $feedRequest = new Request([
+                'page' => $validatedData['feed_page'] ?? 1,
+                'per_page' => $validatedData['feed_per_page'] ?? 20
+            ]);
+
+            $dailyStatusesRequest = new Request([
+                'page' => $validatedData['daily_statuses_page'] ?? 1,
+                'per_page' => $validatedData['daily_statuses_per_page'] ?? 20
+            ]);
+
+            $currentDailyStatusRequest = new Request();
+
+            // Call each controller method
+            $storiesResponse = $storyController->getStories($storiesRequest);
+            $feedResponse = $postController->getFeed($feedRequest);
+            $dailyStatusesResponse = $this->getDailyStatuses($dailyStatusesRequest);
+            $currentDailyStatusResponse = $this->getCurrentDailyStatus($currentDailyStatusRequest);
+
+            // Extract data from responses
+            $storiesData = json_decode($storiesResponse->getContent(), true);
+            $feedData = json_decode($feedResponse->getContent(), true);
+            $dailyStatusesData = json_decode($dailyStatusesResponse->getContent(), true);
+            $currentDailyStatusData = json_decode($currentDailyStatusResponse->getContent(), true);
+
+            // Check if any of the calls failed
+            $failedCalls = [];
+            if ($storiesData['status_code'] !== 200) {
+                $failedCalls[] = 'stories';
+            }
+            if ($feedData['status_code'] !== 200) {
+                $failedCalls[] = 'feed';
+            }
+            if ($dailyStatusesData['status_code'] !== 200) {
+                $failedCalls[] = 'daily_statuses';
+            }
+            if ($currentDailyStatusData['status_code'] !== 200) {
+                $failedCalls[] = 'current_daily_status';
+            }
+
+            if (!empty($failedCalls)) {
+                return response()->json([
+                    'status_code' => 500,
+                    'success' => false,
+                    'message' => 'Some data could not be retrieved',
+                    'failed_calls' => $failedCalls
+                ], 500);
+            }
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Home data retrieved successfully',
+                'data' => [
+                    'stories' => $storiesData['data'] ?? [],
+                    'feed' => $feedData['data'] ?? [],
+                    'daily_statuses' => $dailyStatusesData['data'] ?? [],
+                    'current_daily_status' => $currentDailyStatusData['data'] ?? [],
+                    'requested_at' => now()->toISOString()
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve home data',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -541,4 +653,5 @@ class HomeController extends Controller
             ], 500);
         }
     }
+
 }
