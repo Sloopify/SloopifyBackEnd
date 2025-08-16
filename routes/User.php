@@ -206,6 +206,8 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('get-comment-reactions' , 'getCommentReactions');
 
         Route::post('delete-comment' , 'deleteComment');
+
+        Route::post('get-feed' , 'getFeed');
       });
 
       });
@@ -343,6 +345,8 @@ Route::group(['prefix' => 'api/v1'], function () {
     Route::group(['prefix' => 'home' , 'middleware' => ['user.auth']], function () {
         
       Route::group(['controller' => HomeController::class], function () {
+
+        Route::post('/get-home' , 'getHome');
 
         Route::post('/get-daily-statuses' , 'getDailyStatuses');
 
