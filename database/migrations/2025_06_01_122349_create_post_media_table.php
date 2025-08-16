@@ -25,7 +25,7 @@ return new class extends Migration
             $table->boolean('apply_to_download')->default(false);
             $table->boolean('auto_play')->default(false);
             $table->boolean('is_rotate')->default(false);
-            $table->integer('rotate_angle')->default(0);
+            $table->decimal('rotate_angle', 8, 2)->default(0.0);
             $table->boolean('is_flip_horizontal')->default(false);
             $table->boolean('is_flip_vertical')->default(false);
             $table->json('metadata')->nullable(); // dimensions, duration, etc
