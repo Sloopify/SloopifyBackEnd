@@ -212,7 +212,7 @@ class PostController extends Controller
                 'media.*.auto_play' => 'nullable|boolean',
                 'media.*.apply_to_download' => 'nullable|boolean',
                 'media.*.is_rotate' => 'nullable|boolean',
-                'media.*.rotate_angle' => 'nullable|numeric|min:0|max:360',
+                'media.*.rotate_angle' => 'nullable|integer|min:0|max:360',
                 'media.*.is_flip_horizontal' => 'nullable|boolean',
                 'media.*.is_flip_vertical' => 'nullable|boolean',
                 'media.*.filter_name' => 'nullable|string|max:255',
@@ -598,7 +598,7 @@ class PostController extends Controller
                 'auto_play' => $mediaItem['auto_play'] ?? false,
                 'apply_to_download' => $mediaItem['apply_to_download'] ?? false,
                 'is_rotate' => $mediaItem['is_rotate'] ?? false,
-                'rotate_angle' => $mediaItem['rotate_angle'] ?? 0.0,
+                'rotate_angle' => $mediaItem['rotate_angle'] ?? 0,
                 'is_flip_horizontal' => $mediaItem['is_flip_horizontal'] ?? false,
                 'is_flip_vertical' => $mediaItem['is_flip_vertical'] ?? false,
                 'filter_name' => $mediaItem['filter_name'] ?? null,
@@ -1841,7 +1841,7 @@ class PostController extends Controller
                 'media.*.auto_play' => 'nullable|boolean',
                 'media.*.apply_to_download' => 'nullable|boolean',
                 'media.*.is_rotate' => 'nullable|boolean',
-                'media.*.rotate_angle' => 'nullable|numeric|min:0|max:360',
+                'media.*.rotate_angle' => 'nullable|integer|min:0|max:360',
                 'media.*.is_flip_horizontal' => 'nullable|boolean',
                 'media.*.is_flip_vertical' => 'nullable|boolean',
                 'media.*.filter_name' => 'nullable|string|max:255',
@@ -5722,6 +5722,16 @@ class PostController extends Controller
                 $data['reactions_count'] = (int) (($reactionCountsFriend[$post->id] ?? 0) + ($reactionCountsSuggested[$post->id] ?? 0));
                 $data['is_saved'] = $savedPostIds->has($post->id);
                 $data['is_user_friend'] = $friendIds->contains($post->user_id);
+                // Map user data using mapUsersDetails function
+                $data['user'] = $this->mapUsersDetails(collect([$post->user]))->first();
+                
+                // Map mentions friends to full user data
+                if (isset($data['mentions']['friends']) && !empty($data['mentions']['friends'])) {
+                    $mentionedUserIds = $data['mentions']['friends'];
+                    $mentionedUsers = User::whereIn('id', $mentionedUserIds)->get();
+                    $data['mentions']['friends'] = $this->mapUsersDetails($mentionedUsers);
+                }
+                
                 // Date fields already present: created_at, updated_at
                 return $data;
             });
