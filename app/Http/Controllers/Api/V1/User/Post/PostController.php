@@ -5722,6 +5722,16 @@ class PostController extends Controller
                 $data['reactions_count'] = (int) (($reactionCountsFriend[$post->id] ?? 0) + ($reactionCountsSuggested[$post->id] ?? 0));
                 $data['is_saved'] = $savedPostIds->has($post->id);
                 $data['is_user_friend'] = $friendIds->contains($post->user_id);
+                // Map user data using mapUsersDetails function
+                $data['user'] = $this->mapUsersDetails(collect([$post->user]))->first();
+                
+                // Map mentions friends to full user data
+                if (isset($data['mentions']['friends']) && !empty($data['mentions']['friends'])) {
+                    $mentionedUserIds = $data['mentions']['friends'];
+                    $mentionedUsers = User::whereIn('id', $mentionedUserIds)->get();
+                    $data['mentions']['friends'] = $this->mapUsersDetails($mentionedUsers);
+                }
+                
                 // Date fields already present: created_at, updated_at
                 return $data;
             });
