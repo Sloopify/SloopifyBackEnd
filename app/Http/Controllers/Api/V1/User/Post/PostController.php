@@ -5740,6 +5740,11 @@ class PostController extends Controller
                     }
                 }
                 
+                // Check if mentions object is empty and set to null
+                if (isset($data['mentions']) && empty(array_filter($data['mentions']))) {
+                    $data['mentions'] = null;
+                }
+                
                 // Date fields already present: created_at, updated_at
                 return $data;
             });
