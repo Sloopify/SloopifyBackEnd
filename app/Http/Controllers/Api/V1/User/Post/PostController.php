@@ -5732,6 +5732,14 @@ class PostController extends Controller
                     $data['mentions']['friends'] = $this->mapUsersDetails($mentionedUsers);
                 }
                 
+                // Map mentions place to full place data
+                if (isset($data['mentions']['place']) && !empty($data['mentions']['place'])) {
+                    $userPlace = UserPlace::find($data['mentions']['place']);
+                    if ($userPlace) {
+                        $data['mentions']['place'] = $this->mapUserPlaces($userPlace);
+                    }
+                }
+                
                 // Date fields already present: created_at, updated_at
                 return $data;
             });
