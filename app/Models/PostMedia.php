@@ -45,7 +45,7 @@ class PostMedia extends Model
 
     public function getUrlAttribute()
     {
-        return asset('storage/' . $this->path);
+        return config('app.url') . '/public/storage/' . $this->path;
     }
     
 }
