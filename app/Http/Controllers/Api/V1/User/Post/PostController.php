@@ -4158,10 +4158,20 @@ class PostController extends Controller
             
             $validatedData = $request->validate([
                 'post_id' => 'required|integer|exists:posts,id',
-                'comment_text' => 'required|string|max:1000',
+                'comment_text' => 'nullable|string|max:1000',
                 'mentions' => 'nullable|array',
-                'mentions.*' => 'integer|exists:users,id'
+                'mentions.*' => 'integer|exists:users,id',
+                'media' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200'
             ]);
+
+            // Ensure at least one of comment_text or media is provided
+            if (empty($validatedData['comment_text']) && !$request->hasFile('media')) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Either comment text or media must be provided'
+                ], 422);
+            }
 
             DB::beginTransaction();
 
@@ -4258,12 +4268,32 @@ class PostController extends Controller
                 }
             }
 
+            // Handle media upload if provided
+            $mediaData = null;
+            if ($request->hasFile('media')) {
+                $file = $request->file('media');
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs('comments/' . $validatedData['post_id'], $filename, 'public');
+                
+                $mediaData = [
+                    'type' => strpos($file->getMimeType(), 'image') !== false ? 'image' : 'video',
+                    'filename' => $filename,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                    'path' => $path,
+                    'url' => config('app.url') . '/public/storage/' . $path,
+                    'metadata' => $this->extractMediaMetadata($file)
+                ];
+            }
+
             // Create the comment
             $commentId = DB::table('post_comments')->insertGetId([
                 'post_id' => $validatedData['post_id'],
                 'user_id' => $user->id,
-                'comment_text' => $validatedData['comment_text'],
+                'comment_text' => $validatedData['comment_text'] ?? null,
                 'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                'media' => $mediaData ? json_encode($mediaData) : null,
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
@@ -4291,6 +4321,7 @@ class PostController extends Controller
                         'post_id' => $comment->post_id,
                         'comment_text' => $comment->comment_text,
                         'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
+                        'media' => $comment->media ? json_decode($comment->media, true) : null,
                         'created_at' => $comment->created_at,
                         'user' => [
                             'id' => $comment->user_id,
@@ -4328,10 +4359,20 @@ class PostController extends Controller
             
             $validatedData = $request->validate([
                 'comment_id' => 'required|integer|exists:post_comments,id',
-                'comment_text' => 'required|string|max:1000',
+                'comment_text' => 'nullable|string|max:1000',
                 'mentions' => 'nullable|array',
-                'mentions.*' => 'integer|exists:users,id'
+                'mentions.*' => 'integer|exists:users,id',
+                'media' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200'
             ]);
+
+            // Ensure at least one of comment_text or media is provided
+            if (empty($validatedData['comment_text']) && !$request->hasFile('media')) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Either comment text or media must be provided'
+                ], 422);
+            }
 
             DB::beginTransaction();
 
@@ -4428,13 +4469,33 @@ class PostController extends Controller
                 }
             }
 
+            // Handle media upload if provided
+            $mediaData = null;
+            if ($request->hasFile('media')) {
+                $file = $request->file('media');
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs('comments/' . $parentComment->post_id, $filename, 'public');
+                
+                $mediaData = [
+                    'type' => strpos($file->getMimeType(), 'image') !== false ? 'image' : 'video',
+                    'filename' => $filename,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                    'path' => $path,
+                    'url' => config('app.url') . '/public/storage/' . $path,
+                    'metadata' => $this->extractMediaMetadata($file)
+                ];
+            }
+
             // Create the reply
             $replyId = DB::table('post_comments')->insertGetId([
                 'post_id' => $parentComment->post_id,
                 'user_id' => $user->id,
                 'parent_comment_id' => $validatedData['comment_id'],
-                'comment_text' => $validatedData['comment_text'],
+                'comment_text' => $validatedData['comment_text'] ?? null,
                 'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                'media' => $mediaData ? json_encode($mediaData) : null,
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
@@ -4463,6 +4524,7 @@ class PostController extends Controller
                         'parent_comment_id' => $reply->parent_comment_id,
                         'comment_text' => $reply->comment_text,
                         'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
+                        'media' => $reply->media ? json_decode($reply->media, true) : null,
                         'created_at' => $reply->created_at,
                         'user' => [
                             'id' => $reply->user_id,
@@ -4626,6 +4688,7 @@ class PostController extends Controller
                         'id' => $reply->id,
                         'comment_text' => $reply->comment_text,
                         'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
+                        'media' => $reply->media ? json_decode($reply->media, true) : null,
                         'created_at' => $reply->created_at,
                         'user' => [
                             'id' => $reply->user_id,
@@ -4641,6 +4704,7 @@ class PostController extends Controller
                     'id' => $comment->id,
                     'comment_text' => $comment->comment_text,
                     'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
+                    'media' => $comment->media ? json_decode($comment->media, true) : null,
                     'created_at' => $comment->created_at,
                     'user' => [
                         'id' => $comment->user_id,
@@ -4850,6 +4914,7 @@ class PostController extends Controller
                     'hidden_comments.*',
                     'post_comments.comment_text',
                     'post_comments.mentions',
+                    'post_comments.media',
                     'post_comments.created_at as comment_created_at',
                     'users.first_name',
                     'users.last_name',
@@ -4866,6 +4931,7 @@ class PostController extends Controller
                     'id' => $hiddenComment->comment_id,
                     'comment_text' => $hiddenComment->comment_text,
                     'mentions' => $hiddenComment->mentions ? json_decode($hiddenComment->mentions, true) : [],
+                    'media' => $hiddenComment->media ? json_decode($hiddenComment->media, true) : null,
                     'created_at' => $hiddenComment->comment_created_at,
                     'user' => [
                         'id' => $hiddenComment->comment_owner_id,
@@ -4934,10 +5000,20 @@ class PostController extends Controller
             
             $validatedData = $request->validate([
                 'comment_id' => 'required|integer|exists:post_comments,id',
-                'comment_text' => 'required|string|max:1000',
+                'comment_text' => 'nullable|string|max:1000',
                 'mentions' => 'nullable|array',
-                'mentions.*' => 'integer|exists:users,id'
+                'mentions.*' => 'integer|exists:users,id',
+                'media' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200'
             ]);
+
+            // Ensure at least one of comment_text or media is provided
+            if (empty($validatedData['comment_text']) && !$request->hasFile('media')) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Either comment text or media must be provided'
+                ], 422);
+            }
 
             DB::beginTransaction();
 
@@ -5024,14 +5100,42 @@ class PostController extends Controller
                 }
             }
 
+            // Handle media upload if provided
+            $mediaData = null;
+            if ($request->hasFile('media')) {
+                $file = $request->file('media');
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs('comments/' . $comment->post_id, $filename, 'public');
+                
+                $mediaData = [
+                    'type' => strpos($file->getMimeType(), 'image') !== false ? 'image' : 'video',
+                    'filename' => $filename,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                    'path' => $path,
+                    'url' => config('app.url') . '/public/storage/' . $path,
+                    'metadata' => $this->extractMediaMetadata($file)
+                ];
+            }
+
             // Update the comment
+            $updateData = [
+                'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                'updated_at' => now()
+            ];
+
+            if (isset($validatedData['comment_text'])) {
+                $updateData['comment_text'] = $validatedData['comment_text'];
+            }
+
+            if ($mediaData) {
+                $updateData['media'] = json_encode($mediaData);
+            }
+
             DB::table('post_comments')
                 ->where('id', $validatedData['comment_id'])
-                ->update([
-                    'comment_text' => $validatedData['comment_text'],
-                    'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
-                    'updated_at' => now()
-                ]);
+                ->update($updateData);
 
             // Get the updated comment with user details
             $updatedComment = DB::table('post_comments')
@@ -5057,6 +5161,7 @@ class PostController extends Controller
                         'parent_comment_id' => $updatedComment->parent_comment_id,
                         'comment_text' => $updatedComment->comment_text,
                         'mentions' => $updatedComment->mentions ? json_decode($updatedComment->mentions, true) : [],
+                        'media' => $updatedComment->media ? json_decode($updatedComment->media, true) : null,
                         'created_at' => $updatedComment->created_at,
                         'updated_at' => $updatedComment->updated_at,
                         'user' => [
@@ -5522,6 +5627,22 @@ class PostController extends Controller
                 ]);
             }
 
+            // Delete media files if they exist
+            if ($comment->media) {
+                $mediaData = json_decode($comment->media, true);
+                if ($mediaData && isset($mediaData['path'])) {
+                    try {
+                        Storage::disk('public')->delete($mediaData['path']);
+                    } catch (Exception $e) {
+                        // Log the error but don't fail the deletion
+                        \Log::warning('Failed to delete comment media file: ' . $e->getMessage(), [
+                            'comment_id' => $comment->id,
+                            'media_path' => $mediaData['path']
+                        ]);
+                    }
+                }
+            }
+
             // Soft delete the comment
             DB::table('post_comments')
                 ->where('id', $validatedData['comment_id'])
@@ -5532,6 +5653,28 @@ class PostController extends Controller
 
             // If this is a main comment, also soft delete all its replies
             if ($comment->parent_comment_id === null) {
+                // Get replies to delete their media too
+                $replies = DB::table('post_comments')
+                    ->where('parent_comment_id', $validatedData['comment_id'])
+                    ->where('is_deleted', false)
+                    ->get();
+
+                foreach ($replies as $reply) {
+                    if ($reply->media) {
+                        $replyMediaData = json_decode($reply->media, true);
+                        if ($replyMediaData && isset($replyMediaData['path'])) {
+                            try {
+                                Storage::disk('public')->delete($replyMediaData['path']);
+                            } catch (Exception $e) {
+                                \Log::warning('Failed to delete reply media file: ' . $e->getMessage(), [
+                                    'reply_id' => $reply->id,
+                                    'media_path' => $replyMediaData['path']
+                                ]);
+                            }
+                        }
+                    }
+                }
+
                 DB::table('post_comments')
                     ->where('parent_comment_id', $validatedData['comment_id'])
                     ->update([
