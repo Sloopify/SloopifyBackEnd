@@ -18,6 +18,7 @@ return new class extends Migration
             $table->unsignedBigInteger('parent_comment_id')->nullable(); // For replies to comments
             $table->text('comment_text');
             $table->json('mentions')->nullable(); // Store mentioned users
+            $table->json('media')->nullable(); // Store media files (images/videos)
             $table->boolean('is_deleted')->default(false);
             $table->timestamps();
 

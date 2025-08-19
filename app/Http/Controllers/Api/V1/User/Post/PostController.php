@@ -768,6 +768,125 @@ class PostController extends Controller
         return null;
     }
 
+    /**
+     * Calculate the nesting level of a comment
+     */
+    private function getCommentNestingLevel($commentId)
+    {
+        $level = 0;
+        $currentCommentId = $commentId;
+        
+        while ($currentCommentId) {
+            $comment = DB::table('post_comments')
+                ->where('id', $currentCommentId)
+                ->where('is_deleted', false)
+                ->select('parent_comment_id')
+                ->first();
+                
+            if (!$comment || !$comment->parent_comment_id) {
+                break;
+            }
+            
+            $level++;
+            $currentCommentId = $comment->parent_comment_id;
+            
+            // Safety check to prevent infinite loops
+            if ($level > 10) {
+                break;
+            }
+        }
+        
+        return $level;
+    }
+
+    /**
+     * Build comment tree recursively
+     */
+    private function buildCommentTree($comments, $parentId = null, $maxDepth = 5, $currentDepth = 0)
+    {
+        if ($currentDepth >= $maxDepth) {
+            return [];
+        }
+        
+        $tree = [];
+        foreach ($comments as $comment) {
+            if ($comment->parent_comment_id == $parentId) {
+                $commentData = [
+                    'id' => $comment->id,
+                    'comment_text' => $comment->comment_text,
+                    'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
+                    'media' => $comment->media ? json_decode($comment->media, true) : null,
+                    'created_at' => $comment->created_at,
+                    'user' => [
+                        'id' => $comment->user_id,
+                        'first_name' => $comment->first_name,
+                        'last_name' => $comment->last_name
+                    ],
+                    'nesting_level' => $currentDepth,
+                    'replies_count' => 0,
+                    'replies' => []
+                ];
+                
+                // Get direct replies count
+                $commentData['replies_count'] = $comments->where('parent_comment_id', $comment->id)->count();
+                
+                // Recursively build replies (limited depth for performance)
+                if ($currentDepth < $maxDepth - 1) {
+                    $commentData['replies'] = $this->buildCommentTree($comments, $comment->id, $maxDepth, $currentDepth + 1);
+                }
+                
+                $tree[] = $commentData;
+            }
+        }
+        
+        return $tree;
+    }
+
+    /**
+     * Recursively delete a comment and all its nested replies
+     */
+    private function deleteCommentAndReplies($commentId)
+    {
+        // Get all replies for this comment
+        $replies = DB::table('post_comments')
+            ->where('parent_comment_id', $commentId)
+            ->where('is_deleted', false)
+            ->get();
+
+        // Recursively delete all replies first
+        foreach ($replies as $reply) {
+            $this->deleteCommentAndReplies($reply->id);
+        }
+
+        // Delete media files for this comment
+        $comment = DB::table('post_comments')
+            ->where('id', $commentId)
+            ->where('is_deleted', false)
+            ->first();
+
+        if ($comment && $comment->media) {
+            $mediaData = json_decode($comment->media, true);
+            if ($mediaData && isset($mediaData['path'])) {
+                try {
+                    Storage::disk('public')->delete($mediaData['path']);
+                } catch (Exception $e) {
+                    \Log::warning('Failed to delete comment media file: ' . $e->getMessage(), [
+                        'comment_id' => $commentId,
+                        'media_path' => $mediaData['path']
+                    ]);
+                }
+            }
+        }
+
+        // Soft delete this comment
+        DB::table('post_comments')
+            ->where('id', $commentId)
+            ->update([
+                'is_deleted' => true,
+                'updated_at' => now()
+            ]);
+    }
+
     private function createPoll($post, $pollData)
     {
         PostPoll::create([
@@ -4158,10 +4277,20 @@ class PostController extends Controller
             
             $validatedData = $request->validate([
                 'post_id' => 'required|integer|exists:posts,id',
-                'comment_text' => 'required|string|max:1000',
+                'comment_text' => 'nullable|string|max:1000',
                 'mentions' => 'nullable|array',
-                'mentions.*' => 'integer|exists:users,id'
+                'mentions.*' => 'integer|exists:users,id',
+                'media' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200'
             ]);
+
+            // Ensure at least one of comment_text or media is provided
+            if (empty($validatedData['comment_text']) && !$request->hasFile('media')) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Either comment text or media must be provided'
+                ], 422);
+            }
 
             DB::beginTransaction();
 
@@ -4258,12 +4387,32 @@ class PostController extends Controller
                 }
             }
 
+            // Handle media upload if provided
+            $mediaData = null;
+            if ($request->hasFile('media')) {
+                $file = $request->file('media');
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs('comments/' . $validatedData['post_id'], $filename, 'public');
+                
+                $mediaData = [
+                    'type' => strpos($file->getMimeType(), 'image') !== false ? 'image' : 'video',
+                    'filename' => $filename,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                    'path' => $path,
+                    'url' => config('app.url') . '/public/storage/' . $path,
+                    'metadata' => $this->extractMediaMetadata($file)
+                ];
+            }
+
             // Create the comment
             $commentId = DB::table('post_comments')->insertGetId([
                 'post_id' => $validatedData['post_id'],
                 'user_id' => $user->id,
-                'comment_text' => $validatedData['comment_text'],
+                'comment_text' => $validatedData['comment_text'] ?? null,
                 'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                'media' => $mediaData ? json_encode($mediaData) : null,
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
@@ -4291,6 +4440,7 @@ class PostController extends Controller
                         'post_id' => $comment->post_id,
                         'comment_text' => $comment->comment_text,
                         'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
+                        'media' => $comment->media ? json_decode($comment->media, true) : null,
                         'created_at' => $comment->created_at,
                         'user' => [
                             'id' => $comment->user_id,
@@ -4328,10 +4478,20 @@ class PostController extends Controller
             
             $validatedData = $request->validate([
                 'comment_id' => 'required|integer|exists:post_comments,id',
-                'comment_text' => 'required|string|max:1000',
+                'comment_text' => 'nullable|string|max:1000',
                 'mentions' => 'nullable|array',
-                'mentions.*' => 'integer|exists:users,id'
+                'mentions.*' => 'integer|exists:users,id',
+                'media' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200'
             ]);
+
+            // Ensure at least one of comment_text or media is provided
+            if (empty($validatedData['comment_text']) && !$request->hasFile('media')) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Either comment text or media must be provided'
+                ], 422);
+            }
 
             DB::beginTransaction();
 
@@ -4352,12 +4512,13 @@ class PostController extends Controller
                 ]);
             }
 
-            // Check if this is already a reply (we only allow one level of nesting)
-            if ($parentComment->parent_comment_id !== null) {
+            // Check maximum nesting depth (limit to 5 levels to prevent infinite nesting)
+            $nestingLevel = $this->getCommentNestingLevel($validatedData['comment_id']);
+            if ($nestingLevel >= 5) {
                 return response()->json([
                     'status_code' => 422,
                     'success' => false,
-                    'message' => 'Cannot reply to a reply. You can only reply to main comments.'
+                    'message' => 'Maximum nesting depth reached. Cannot reply to this comment.'
                 ]);
             }
 
@@ -4428,13 +4589,33 @@ class PostController extends Controller
                 }
             }
 
+            // Handle media upload if provided
+            $mediaData = null;
+            if ($request->hasFile('media')) {
+                $file = $request->file('media');
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs('comments/' . $parentComment->post_id, $filename, 'public');
+                
+                $mediaData = [
+                    'type' => strpos($file->getMimeType(), 'image') !== false ? 'image' : 'video',
+                    'filename' => $filename,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                    'path' => $path,
+                    'url' => config('app.url') . '/public/storage/' . $path,
+                    'metadata' => $this->extractMediaMetadata($file)
+                ];
+            }
+
             // Create the reply
             $replyId = DB::table('post_comments')->insertGetId([
                 'post_id' => $parentComment->post_id,
                 'user_id' => $user->id,
                 'parent_comment_id' => $validatedData['comment_id'],
-                'comment_text' => $validatedData['comment_text'],
+                'comment_text' => $validatedData['comment_text'] ?? null,
                 'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                'media' => $mediaData ? json_encode($mediaData) : null,
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
@@ -4463,6 +4644,7 @@ class PostController extends Controller
                         'parent_comment_id' => $reply->parent_comment_id,
                         'comment_text' => $reply->comment_text,
                         'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
+                        'media' => $reply->media ? json_decode($reply->media, true) : null,
                         'created_at' => $reply->created_at,
                         'user' => [
                             'id' => $reply->user_id,
@@ -4501,17 +4683,15 @@ class PostController extends Controller
                 'post_id' => 'required|integer|exists:posts,id',
                 'page' => 'nullable|integer|min:1',
                 'per_page' => 'nullable|integer|min:1|max:50',
-                'replies_page' => 'nullable|integer|min:1',
-                'replies_per_page' => 'nullable|integer|min:1|max:20'
+                'max_depth' => 'nullable|integer|min:1|max:10',
+                'load_replies' => 'nullable|boolean'
             ]);
 
             $page = $validatedData['page'] ?? 1;
             $perPage = $validatedData['per_page'] ?? 20;
+            $maxDepth = $validatedData['max_depth'] ?? 3; // Default to 3 levels deep
+            $loadReplies = $validatedData['load_replies'] ?? true;
             $offset = ($page - 1) * $perPage;
-            
-            $repliesPage = $validatedData['replies_page'] ?? 1;
-            $repliesPerPage = $validatedData['replies_per_page'] ?? 10;
-            $repliesOffset = ($repliesPage - 1) * $repliesPerPage;
 
             // Check if post exists and user can see it
             $post = DB::table('posts')
@@ -4550,11 +4730,10 @@ class PostController extends Controller
                 }
             }
 
-            // Get main comments (not replies) excluding hidden ones
-            $mainComments = DB::table('post_comments')
+            // Get all comments for this post (main comments and replies) excluding hidden ones
+            $allComments = DB::table('post_comments')
                 ->join('users', 'post_comments.user_id', '=', 'users.id')
                 ->where('post_comments.post_id', $validatedData['post_id'])
-                ->where('post_comments.parent_comment_id', null)
                 ->where('post_comments.is_deleted', false)
                 ->whereNotExists(function($query) use ($user) {
                     $query->select(DB::raw(1))
@@ -4572,102 +4751,51 @@ class PostController extends Controller
                     'users.last_name'
                 )
                 ->orderBy('post_comments.created_at', 'asc')
-                ->offset($offset)
-                ->limit($perPage)
                 ->get();
 
-                        // Get replies for each main comment with pagination
+            // Get main comments (top-level comments) for pagination
+            $mainComments = $allComments->where('parent_comment_id', null);
+            $totalMainComments = $mainComments->count();
+            
+            // Paginate main comments
+            $paginatedMainComments = $mainComments->slice($offset, $perPage);
+            $mainCommentIds = $paginatedMainComments->pluck('id');
+
+            // Build comment tree for paginated main comments
             $commentsWithReplies = [];
-            foreach ($mainComments as $comment) {
-                // Get total replies count for this comment excluding hidden ones
-                $totalReplies = DB::table('post_comments')
-                    ->where('parent_comment_id', $comment->id)
-                    ->where('is_deleted', false)
-                    ->whereNotExists(function($query) use ($user) {
-                        $query->select(DB::raw(1))
-                              ->from('hidden_comments')
-                              ->whereColumn('hidden_comments.comment_id', 'post_comments.id')
-                              ->where('hidden_comments.user_id', $user->id)
-                              ->where(function($subQuery) {
-                                  $subQuery->where('hidden_comments.expires_at', '>', now())
-                                          ->orWhere('hidden_comments.hide_type', 'permanent');
-                              });
-                    })
-                    ->count();
+            foreach ($paginatedMainComments as $mainComment) {
+                $commentData = [
+                    'id' => $mainComment->id,
+                    'comment_text' => $mainComment->comment_text,
+                    'mentions' => $mainComment->mentions ? json_decode($mainComment->mentions, true) : [],
+                    'media' => $mainComment->media ? json_decode($mainComment->media, true) : null,
+                    'created_at' => $mainComment->created_at,
+                    'user' => [
+                        'id' => $mainComment->user_id,
+                        'first_name' => $mainComment->first_name,
+                        'last_name' => $mainComment->last_name
+                    ],
+                    'nesting_level' => 0,
+                    'replies_count' => 0,
+                    'replies' => []
+                ];
 
-                // Get paginated replies for this comment excluding hidden ones
-                $replies = DB::table('post_comments')
-                    ->join('users', 'post_comments.user_id', '=', 'users.id')
-                    ->where('post_comments.parent_comment_id', $comment->id)
-                    ->where('post_comments.is_deleted', false)
-                    ->whereNotExists(function($query) use ($user) {
-                        $query->select(DB::raw(1))
-                              ->from('hidden_comments')
-                              ->whereColumn('hidden_comments.comment_id', 'post_comments.id')
-                              ->where('hidden_comments.user_id', $user->id)
-                              ->where(function($subQuery) {
-                                  $subQuery->where('hidden_comments.expires_at', '>', now())
-                                          ->orWhere('hidden_comments.hide_type', 'permanent');
-                              });
-                    })
-                    ->select(
-                        'post_comments.*',
-                        'users.first_name',
-                        'users.last_name'
-                    )
-                    ->orderBy('post_comments.created_at', 'asc')
-                    ->offset($repliesOffset)
-                    ->limit($repliesPerPage)
-                    ->get();
-
-                $repliesArray = [];
-                foreach ($replies as $reply) {
-                    $repliesArray[] = [
-                        'id' => $reply->id,
-                        'comment_text' => $reply->comment_text,
-                        'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
-                        'created_at' => $reply->created_at,
-                        'user' => [
-                            'id' => $reply->user_id,
-                            'first_name' => $reply->first_name,
-                            'last_name' => $reply->last_name
-                        ]
-                    ];
+                if ($loadReplies) {
+                    // Get all replies for this main comment (including nested replies)
+                    $repliesForThisComment = $allComments->where('parent_comment_id', $mainComment->id);
+                    $commentData['replies_count'] = $repliesForThisComment->count();
+                    
+                    // Build reply tree recursively (limited depth for performance)
+                    $commentData['replies'] = $this->buildCommentTree($allComments, $mainComment->id, $maxDepth, 1);
+                } else {
+                    // Just get the count without loading replies
+                    $commentData['replies_count'] = $allComments->where('parent_comment_id', $mainComment->id)->count();
                 }
 
-                $totalRepliesPages = ceil($totalReplies / $repliesPerPage);
-
-                $commentsWithReplies[] = [
-                    'id' => $comment->id,
-                    'comment_text' => $comment->comment_text,
-                    'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
-                    'created_at' => $comment->created_at,
-                    'user' => [
-                        'id' => $comment->user_id,
-                        'first_name' => $comment->first_name,
-                        'last_name' => $comment->last_name
-                    ],
-                    'replies_count' => $totalReplies,
-                    'replies' => $repliesArray,
-                    'replies_pagination' => [
-                        'current_page' => $repliesPage,
-                        'per_page' => $repliesPerPage,
-                        'total' => $totalReplies,
-                        'total_pages' => $totalRepliesPages,
-                        'from' => $repliesOffset + 1,
-                        'to' => min($repliesOffset + $repliesPerPage, $totalReplies)
-                    ]
-                ];
+                $commentsWithReplies[] = $commentData;
             }
 
-            // Get total count for pagination
-            $totalComments = DB::table('post_comments')
-                ->where('post_id', $validatedData['post_id'])
-                ->where('parent_comment_id', null)
-                ->where('is_deleted', false)
-                ->count();
-
-            $totalPages = ceil($totalComments / $perPage);
+            $totalPages = ceil($totalMainComments / $perPage);
 
             return response()->json([
                 'status_code' => 200,
@@ -4678,10 +4806,15 @@ class PostController extends Controller
                     'pagination' => [
                         'current_page' => $page,
                         'per_page' => $perPage,
-                        'total' => $totalComments,
+                        'total' => $totalMainComments,
                         'total_pages' => $totalPages,
-                        'from' => $offset + 1,
-                        'to' => min($offset + $perPage, $totalComments)
+                        'from' => $totalMainComments ? $offset + 1 : null,
+                        'to' => $totalMainComments ? min($offset + $perPage, $totalMainComments) : null,
+                        'has_more_pages' => $page < $totalPages
+                    ],
+                    'settings' => [
+                        'max_depth' => $maxDepth,
+                        'load_replies' => $loadReplies
                     ]
                 ]
             ]);
@@ -4850,6 +4983,7 @@ class PostController extends Controller
                     'hidden_comments.*',
                     'post_comments.comment_text',
                     'post_comments.mentions',
+                    'post_comments.media',
                     'post_comments.created_at as comment_created_at',
                     'users.first_name',
                     'users.last_name',
@@ -4866,6 +5000,7 @@ class PostController extends Controller
                     'id' => $hiddenComment->comment_id,
                     'comment_text' => $hiddenComment->comment_text,
                     'mentions' => $hiddenComment->mentions ? json_decode($hiddenComment->mentions, true) : [],
+                    'media' => $hiddenComment->media ? json_decode($hiddenComment->media, true) : null,
                     'created_at' => $hiddenComment->comment_created_at,
                     'user' => [
                         'id' => $hiddenComment->comment_owner_id,
@@ -4934,10 +5069,20 @@ class PostController extends Controller
             
             $validatedData = $request->validate([
                 'comment_id' => 'required|integer|exists:post_comments,id',
-                'comment_text' => 'required|string|max:1000',
+                'comment_text' => 'nullable|string|max:1000',
                 'mentions' => 'nullable|array',
-                'mentions.*' => 'integer|exists:users,id'
+                'mentions.*' => 'integer|exists:users,id',
+                'media' => 'nullable|file|mimes:jpeg,png,gif,mp4,avi|max:51200'
             ]);
+
+            // Ensure at least one of comment_text or media is provided
+            if (empty($validatedData['comment_text']) && !$request->hasFile('media')) {
+                return response()->json([
+                    'status_code' => 422,
+                    'success' => false,
+                    'message' => 'Either comment text or media must be provided'
+                ], 422);
+            }
 
             DB::beginTransaction();
 
@@ -5024,14 +5169,42 @@ class PostController extends Controller
                 }
             }
 
+            // Handle media upload if provided
+            $mediaData = null;
+            if ($request->hasFile('media')) {
+                $file = $request->file('media');
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $path = $file->storeAs('comments/' . $comment->post_id, $filename, 'public');
+                
+                $mediaData = [
+                    'type' => strpos($file->getMimeType(), 'image') !== false ? 'image' : 'video',
+                    'filename' => $filename,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                    'path' => $path,
+                    'url' => config('app.url') . '/public/storage/' . $path,
+                    'metadata' => $this->extractMediaMetadata($file)
+                ];
+            }
+
             // Update the comment
+            $updateData = [
+                'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                'updated_at' => now()
+            ];
+
+            if (isset($validatedData['comment_text'])) {
+                $updateData['comment_text'] = $validatedData['comment_text'];
+            }
+
+            if ($mediaData) {
+                $updateData['media'] = json_encode($mediaData);
+            }
+
             DB::table('post_comments')
                 ->where('id', $validatedData['comment_id'])
-                ->update([
-                    'comment_text' => $validatedData['comment_text'],
-                    'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
-                    'updated_at' => now()
-                ]);
+                ->update($updateData);
 
             // Get the updated comment with user details
             $updatedComment = DB::table('post_comments')
@@ -5057,6 +5230,7 @@ class PostController extends Controller
                         'parent_comment_id' => $updatedComment->parent_comment_id,
                         'comment_text' => $updatedComment->comment_text,
                         'mentions' => $updatedComment->mentions ? json_decode($updatedComment->mentions, true) : [],
+                        'media' => $updatedComment->media ? json_decode($updatedComment->media, true) : null,
                         'created_at' => $updatedComment->created_at,
                         'updated_at' => $updatedComment->updated_at,
                         'user' => [
@@ -5326,6 +5500,174 @@ class PostController extends Controller
     }
 
    
+    public function getCommentReplies(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'comment_id' => 'required|integer|exists:post_comments,id',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:50',
+                'max_depth' => 'nullable|integer|min:1|max:10'
+            ]);
+
+            $page = $validatedData['page'] ?? 1;
+            $perPage = $validatedData['per_page'] ?? 20;
+            $maxDepth = $validatedData['max_depth'] ?? 3;
+            $offset = ($page - 1) * $perPage;
+
+            // Get the parent comment
+            $parentComment = DB::table('post_comments')
+                ->where('id', $validatedData['comment_id'])
+                ->where('is_deleted', false)
+                ->first();
+
+            if (!$parentComment) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ]);
+            }
+
+            // Check if user can see the comment (privacy checks)
+            $post = DB::table('posts')
+                ->where('id', $parentComment->post_id)
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$post) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post not found'
+                ]);
+            }
+
+            // Privacy check
+            if ($post->privacy === 'friends' && $post->user_id !== $user->id) {
+                $friendship = DB::table('friendships')
+                    ->where(function($query) use ($user, $post) {
+                        $query->where('user_id', $user->id)
+                              ->where('friend_id', $post->user_id);
+                    })
+                    ->orWhere(function($query) use ($user, $post) {
+                        $query->where('user_id', $post->user_id)
+                              ->where('friend_id', $user->id);
+                    })
+                    ->where('status', 'accepted')
+                    ->first();
+
+                if (!$friendship) {
+                    return response()->json([
+                        'status_code' => 403,
+                        'success' => false,
+                        'message' => 'You can only view replies on comments from your friends'
+                    ]);
+                }
+            }
+
+            // Get all replies for this comment (including nested replies)
+            $allReplies = DB::table('post_comments')
+                ->join('users', 'post_comments.user_id', '=', 'users.id')
+                ->where('post_comments.post_id', $parentComment->post_id)
+                ->where('post_comments.is_deleted', false)
+                ->whereNotExists(function($query) use ($user) {
+                    $query->select(DB::raw(1))
+                          ->from('hidden_comments')
+                          ->whereColumn('hidden_comments.comment_id', 'post_comments.id')
+                          ->where('hidden_comments.user_id', $user->id)
+                          ->where(function($subQuery) {
+                              $subQuery->where('hidden_comments.expires_at', '>', now())
+                                      ->orWhere('hidden_comments.hide_type', 'permanent');
+                          });
+                })
+                ->select(
+                    'post_comments.*',
+                    'users.first_name',
+                    'users.last_name'
+                )
+                ->orderBy('post_comments.created_at', 'asc')
+                ->get();
+
+            // Get direct replies for pagination
+            $directReplies = $allReplies->where('parent_comment_id', $validatedData['comment_id']);
+            $totalDirectReplies = $directReplies->count();
+            
+            // Paginate direct replies
+            $paginatedDirectReplies = $directReplies->slice($offset, $perPage);
+
+            // Build reply tree for paginated direct replies
+            $repliesWithNested = [];
+            foreach ($paginatedDirectReplies as $reply) {
+                $replyData = [
+                    'id' => $reply->id,
+                    'comment_text' => $reply->comment_text,
+                    'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
+                    'media' => $reply->media ? json_decode($reply->media, true) : null,
+                    'created_at' => $reply->created_at,
+                    'user' => [
+                        'id' => $reply->user_id,
+                        'first_name' => $reply->first_name,
+                        'last_name' => $reply->last_name
+                    ],
+                    'nesting_level' => $this->getCommentNestingLevel($reply->id),
+                    'replies_count' => 0,
+                    'replies' => []
+                ];
+
+                // Get nested replies count
+                $nestedReplies = $allReplies->where('parent_comment_id', $reply->id);
+                $replyData['replies_count'] = $nestedReplies->count();
+                
+                // Build nested reply tree (limited depth for performance)
+                $replyData['replies'] = $this->buildCommentTree($allReplies, $reply->id, $maxDepth - 1, 1);
+
+                $repliesWithNested[] = $replyData;
+            }
+
+            $totalPages = ceil($totalDirectReplies / $perPage);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Comment replies retrieved successfully',
+                'data' => [
+                    'parent_comment_id' => $validatedData['comment_id'],
+                    'replies' => $repliesWithNested,
+                    'pagination' => [
+                        'current_page' => $page,
+                        'per_page' => $perPage,
+                        'total' => $totalDirectReplies,
+                        'total_pages' => $totalPages,
+                        'from' => $totalDirectReplies ? $offset + 1 : null,
+                        'to' => $totalDirectReplies ? min($offset + $perPage, $totalDirectReplies) : null,
+                        'has_more_pages' => $page < $totalPages
+                    ],
+                    'settings' => [
+                        'max_depth' => $maxDepth
+                    ]
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve comment replies',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function getCommentReactions(Request $request)
     {
         try {
@@ -5522,6 +5864,22 @@ class PostController extends Controller
                 ]);
             }
 
+            // Delete media files if they exist
+            if ($comment->media) {
+                $mediaData = json_decode($comment->media, true);
+                if ($mediaData && isset($mediaData['path'])) {
+                    try {
+                        Storage::disk('public')->delete($mediaData['path']);
+                    } catch (Exception $e) {
+                        // Log the error but don't fail the deletion
+                        \Log::warning('Failed to delete comment media file: ' . $e->getMessage(), [
+                            'comment_id' => $comment->id,
+                            'media_path' => $mediaData['path']
+                        ]);
+                    }
+                }
+            }
+
             // Soft delete the comment
             DB::table('post_comments')
                 ->where('id', $validatedData['comment_id'])
@@ -5530,15 +5888,8 @@ class PostController extends Controller
                     'updated_at' => now()
                 ]);
 
-            // If this is a main comment, also soft delete all its replies
-            if ($comment->parent_comment_id === null) {
-                DB::table('post_comments')
-                    ->where('parent_comment_id', $validatedData['comment_id'])
-                    ->update([
-                        'is_deleted' => true,
-                        'updated_at' => now()
-                    ]);
-            }
+            // Recursively delete all nested replies and their media
+            $this->deleteCommentAndReplies($validatedData['comment_id']);
 
             DB::commit();
 
