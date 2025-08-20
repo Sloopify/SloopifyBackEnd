@@ -3073,12 +3073,27 @@ class PostController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $e->errors()
             ], 422);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status_code' => 404,
+                'success' => false,
+                'message' => 'Post not found or does not belong to you',
+                'error' => $e->getMessage(),
+                'details' => [
+                    'post_id' => $request->post_id,
+                    'user_id' => Auth::guard('user')->id()
+                ]
+            ], 404);
         } catch (Exception $e) {
             return response()->json([
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to retrieve post notifications status',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'details' => [
+                    'post_id' => $request->post_id ?? null,
+                    'user_id' => Auth::guard('user')->id() ?? null
+                ]
             ], 500);
         }
     }
