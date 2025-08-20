@@ -16,7 +16,7 @@ use App\Http\Controllers\Api\V1\User\Post\PostController;
 class HomeController extends Controller
 {
     
-    // Daily Status mapping helpers (similar to mapFeelings in PostController)
+   
     private function buildIconUrl($icon)
     {
         if (!$icon) {
