@@ -768,9 +768,6 @@ class PostController extends Controller
         return null;
     }
 
-    /**
-     * Calculate the nesting level of a comment
-     */
     private function getCommentNestingLevel($commentId)
     {
         $level = 0;
@@ -799,10 +796,7 @@ class PostController extends Controller
         return $level;
     }
 
-    /**
-     * Build comment tree recursively
-     */
-    private function buildCommentTree($comments, $parentId = null, $maxDepth = 5, $currentDepth = 0)
+    private function buildCommentTree($comments, $users, $parentId = null, $maxDepth = 5, $currentDepth = 0)
     {
         if ($currentDepth >= $maxDepth) {
             return [];
@@ -811,17 +805,14 @@ class PostController extends Controller
         $tree = [];
         foreach ($comments as $comment) {
             if ($comment->parent_comment_id == $parentId) {
+                $user = $users->get($comment->user_id);
                 $commentData = [
                     'id' => $comment->id,
                     'comment_text' => $comment->comment_text,
                     'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
                     'media' => $comment->media ? json_decode($comment->media, true) : null,
                     'created_at' => $comment->created_at,
-                    'user' => [
-                        'id' => $comment->user_id,
-                        'first_name' => $comment->first_name,
-                        'last_name' => $comment->last_name
-                    ],
+                    'user' => $user ? app(AuthController::class)->mapUserDetails($user) : null,
                     'nesting_level' => $currentDepth,
                     'replies_count' => 0,
                     'replies' => []
@@ -832,7 +823,7 @@ class PostController extends Controller
                 
                 // Recursively build replies (limited depth for performance)
                 if ($currentDepth < $maxDepth - 1) {
-                    $commentData['replies'] = $this->buildCommentTree($comments, $comment->id, $maxDepth, $currentDepth + 1);
+                    $commentData['replies'] = $this->buildCommentTree($comments, $users, $comment->id, $maxDepth, $currentDepth + 1);
                 }
                 
                 $tree[] = $commentData;
@@ -842,9 +833,6 @@ class PostController extends Controller
         return $tree;
     }
 
-    /**
-     * Recursively delete a comment and all its nested replies
-     */
     private function deleteCommentAndReplies($commentId)
     {
         // Get all replies for this comment
@@ -4635,16 +4623,13 @@ class PostController extends Controller
                 'updated_at' => now()
             ]);
 
-            // Get the created reply with user details
+            // Get the created reply
             $reply = DB::table('post_comments')
-                ->join('users', 'post_comments.user_id', '=', 'users.id')
                 ->where('post_comments.id', $replyId)
-                ->select(
-                    'post_comments.*',
-                    'users.first_name',
-                    'users.last_name'
-                )
                 ->first();
+
+            // Get complete user data
+            $user = User::find($reply->user_id);
 
             DB::commit();
 
@@ -4665,11 +4650,7 @@ class PostController extends Controller
                         'media' => $reply->media ? json_decode($reply->media, true) : null,
                         'created_at' => $reply->created_at,
                         'nesting_level' => $nestingLevel,
-                        'user' => [
-                            'id' => $reply->user_id,
-                            'first_name' => $reply->first_name,
-                            'last_name' => $reply->last_name
-                        ]
+                        'user' => $user ? app(AuthController::class)->mapUserDetails($user) : null
                     ]
                 ]
             ]);
@@ -4751,7 +4732,6 @@ class PostController extends Controller
 
             // Get all comments for this post (main comments and replies) excluding hidden ones
             $allComments = DB::table('post_comments')
-                ->join('users', 'post_comments.user_id', '=', 'users.id')
                 ->where('post_comments.post_id', $validatedData['post_id'])
                 ->where('post_comments.is_deleted', false)
                 ->whereNotExists(function($query) use ($user) {
@@ -4764,13 +4744,14 @@ class PostController extends Controller
                                       ->orWhere('hidden_comments.hide_type', 'permanent');
                           });
                 })
-                ->select(
-                    'post_comments.*',
-                    'users.first_name',
-                    'users.last_name'
-                )
                 ->orderBy('post_comments.created_at', 'asc')
                 ->get();
+
+            // Get all unique user IDs from comments
+            $userIds = $allComments->pluck('user_id')->unique();
+            
+            // Get complete user data
+            $users = User::whereIn('id', $userIds)->get()->keyBy('id');
 
             // Get main comments (top-level comments) for pagination
             $mainComments = $allComments->where('parent_comment_id', null);
@@ -4783,17 +4764,14 @@ class PostController extends Controller
             // Build comment tree for paginated main comments
             $commentsWithReplies = [];
             foreach ($paginatedMainComments as $mainComment) {
+                $user = $users->get($mainComment->user_id);
                 $commentData = [
                     'id' => $mainComment->id,
                     'comment_text' => $mainComment->comment_text,
                     'mentions' => $mainComment->mentions ? json_decode($mainComment->mentions, true) : [],
                     'media' => $mainComment->media ? json_decode($mainComment->media, true) : null,
                     'created_at' => $mainComment->created_at,
-                    'user' => [
-                        'id' => $mainComment->user_id,
-                        'first_name' => $mainComment->first_name,
-                        'last_name' => $mainComment->last_name
-                    ],
+                    'user' => $user ? app(AuthController::class)->mapUserDetails($user) : null,
                     'nesting_level' => 0,
                     'replies_count' => 0,
                     'replies' => []
@@ -4805,7 +4783,7 @@ class PostController extends Controller
                     $commentData['replies_count'] = $repliesForThisComment->count();
                     
                     // Build reply tree recursively (limited depth for performance)
-                    $commentData['replies'] = $this->buildCommentTree($allComments, $mainComment->id, $maxDepth, 1);
+                    $commentData['replies'] = $this->buildCommentTree($allComments, $users, $mainComment->id, $maxDepth, 1);
                 } else {
                     // Just get the count without loading replies
                     $commentData['replies_count'] = $allComments->where('parent_comment_id', $mainComment->id)->count();
@@ -5423,7 +5401,6 @@ class PostController extends Controller
             ], 500);
         }
     }
-
    
     public function removeCommentReaction(Request $request)
     {
@@ -5517,7 +5494,6 @@ class PostController extends Controller
             ], 500);
         }
     }
-
    
     public function getCommentReplies(Request $request)
     {
@@ -5936,7 +5912,6 @@ class PostController extends Controller
             ]);
         }
     }
-
 
     public function getFeed(Request $request)
     {
