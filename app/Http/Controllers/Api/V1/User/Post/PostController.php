@@ -4648,6 +4648,9 @@ class PostController extends Controller
 
             DB::commit();
 
+            // Calculate nesting level for the reply
+            $nestingLevel = $this->getCommentNestingLevel($reply->id);
+
             return response()->json([
                 'status_code' => 201,
                 'success' => true,
@@ -4661,6 +4664,7 @@ class PostController extends Controller
                         'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
                         'media' => $reply->media ? json_decode($reply->media, true) : null,
                         'created_at' => $reply->created_at,
+                        'nesting_level' => $nestingLevel,
                         'user' => [
                             'id' => $reply->user_id,
                             'first_name' => $reply->first_name,
