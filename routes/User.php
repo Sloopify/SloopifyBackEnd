@@ -207,6 +207,10 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('delete-comment' , 'deleteComment');
 
+        Route::post('react-to-post' , 'reactToPost');
+
+        Route::post('remove-post-reaction' , 'removePostReaction');
+
         Route::post('get-feed' , 'getFeed');
       });
 
@@ -357,6 +361,8 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('/remove-daily-status' , 'removeDailyStatus');
 
         Route::post('/get-current-daily-status' , 'getCurrentDailyStatus');
+
+        Route::post('/get-reactions' , 'getReactions');
 
       });
     });
