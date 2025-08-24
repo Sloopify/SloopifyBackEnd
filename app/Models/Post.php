@@ -68,6 +68,11 @@ class Post extends Model
         return $this->hasMany(ContentModerationLog::class);
     }
 
+    public function reactions()
+    {
+        return $this->hasMany(PostReaction::class);
+    }
+
     public function scopeApproved($query)
     {
         return $query->where('status', 'approved');

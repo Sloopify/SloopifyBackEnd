@@ -12,6 +12,7 @@ use Illuminate\Validation\ValidationException;
 use Exception;
 use App\Http\Controllers\Api\V1\User\Story\StoryController;
 use App\Http\Controllers\Api\V1\User\Post\PostController;
+use App\Models\Reaction;
 
 class HomeController extends Controller
 {
@@ -70,6 +71,28 @@ class HomeController extends Controller
 
         return $statuses->map(function ($status) use ($user) {
             return $this->mapDailyStatus($status, $user);
+        })->values();
+    }
+
+    private function mapReactionDetails($reactions)
+    {
+        // Convert array to collection if needed
+        if (is_array($reactions)) {
+            $reactions = collect($reactions);
+        }
+        
+        return $reactions->map(function ($reaction) {
+            return [
+                'id' => $reaction->id,
+                'name' => $reaction->name,
+                'content' => $reaction->content,
+                'image' => $reaction->image_url ? config('app.url') . asset('storage/' . $reaction->image_url) : null,
+                'video' => $reaction->video_url ? config('app.url') . asset('storage/' . $reaction->video_url) : null,
+                'status' => $reaction->status,
+                'is_default' => $reaction->is_default,
+                'created_at' => $reaction->created_at,
+                'updated_at' => $reaction->updated_at,
+            ];
         })->values();
     }
     
@@ -649,6 +672,126 @@ class HomeController extends Controller
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to get current daily status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getReactions(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'sort_by' => 'nullable|string|in:name,created_at',
+                'sort_order' => 'nullable|string|in:asc,desc',
+                'status' => 'nullable|string|in:active,inactive'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $sortBy = $validatedData['sort_by'] ?? 'name';
+            $sortOrder = $validatedData['sort_order'] ?? 'asc';
+            $statusFilter = $validatedData['status'] ?? null;
+            
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Build query
+            $query = Reaction::query();
+
+            // Apply status filter
+            if ($statusFilter) {
+                if ($statusFilter === 'active') {
+                    $query->active();
+                } elseif ($statusFilter === 'inactive') {
+                    $query->inactive();
+                }
+            } else {
+                // Default to active reactions only
+                $query->active();
+            }
+
+            // Apply sorting
+            if ($sortBy === 'name') {
+                $query->orderBy('name', $sortOrder);
+            } elseif ($sortBy === 'created_at') {
+                $query->orderBy('created_at', $sortOrder);
+            }
+
+            // Get reactions with pagination
+            $reactions = $query->paginate($perPage);
+
+            if($reactions->isEmpty()) {
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No reactions found',
+                    'data' => [
+                        'reactions' => [],
+                        'total_reactions' => 0,
+                        'current_filter' => $statusFilter,
+                        'sorting' => [
+                            'sort_by' => $sortBy,
+                            'sort_order' => $sortOrder
+                        ],
+                        'pagination' => [
+                            'current_page' => $reactions->currentPage(),
+                            'last_page' => $reactions->lastPage(),
+                            'per_page' => $reactions->perPage(),
+                            'total' => $reactions->total(),
+                            'from' => $reactions->firstItem(),
+                            'to' => $reactions->lastItem(),
+                            'has_more_pages' => $reactions->hasMorePages()
+                        ]
+                    ]
+                ], 200);
+            }
+
+            // Map reactions using helper
+            $mappedReactions = $this->mapReactionDetails($reactions->getCollection());
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Reactions retrieved successfully',
+                'data' => [
+                    'reactions' => $mappedReactions,
+                    'total_reactions' => $reactions->total(),
+                    'current_filter' => $statusFilter,
+                    'sorting' => [
+                        'sort_by' => $sortBy,
+                        'sort_order' => $sortOrder
+                    ],
+                    'pagination' => [
+                        'current_page' => $reactions->currentPage(),
+                        'last_page' => $reactions->lastPage(),
+                        'per_page' => $reactions->perPage(),
+                        'total' => $reactions->total(),
+                        'from' => $reactions->firstItem(),
+                        'to' => $reactions->lastItem(),
+                        'has_more_pages' => $reactions->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve reactions',
                 'error' => $e->getMessage()
             ], 500);
         }

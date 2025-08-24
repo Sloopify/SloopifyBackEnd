@@ -25,7 +25,12 @@ use App\Models\User;
 use App\Models\PersonalOccasionSetting;
 use App\Models\UserPlace;
 use App\Models\PersonalOccasionCategory;
+use App\Models\PostReaction;
+use App\Models\CommentReaction;
+use App\Models\Reaction;
+use App\Models\PostComment;
 use App\Http\Controllers\Api\V1\User\Auth\AuthController;
+use App\Http\Controllers\Api\V1\User\Home\HomeController;
 use Carbon\Carbon;
 
 class PostController extends Controller
@@ -796,7 +801,7 @@ class PostController extends Controller
         return $level;
     }
 
-    private function buildCommentTree($comments, $users, $parentId = null, $maxDepth = 5, $currentDepth = 0)
+    private function buildCommentTree($comments, $users, $parentId = null, $maxDepth = 5, $currentDepth = 0, $commentReactions = null, $userCommentReactions = null)
     {
         if ($currentDepth >= $maxDepth) {
             return [];
@@ -806,8 +811,27 @@ class PostController extends Controller
         foreach ($comments as $comment) {
             if ($comment->parent_comment_id == $parentId) {
                 $user = $users->get($comment->user_id);
+                
+                // Get comment reactions data for this comment
+                $commentReactionData = $commentReactions ? $commentReactions->get($comment->id, collect()) : collect();
+                $totalCommentReactions = $commentReactionData->count();
+                
+                // Get user's reaction for this comment
+                $userCommentReactionData = $userCommentReactions ? $userCommentReactions->get($comment->id) : null;
+
+                // Group reactions by type and count them
+                $reactionCounts = $commentReactionData->groupBy('reaction_id')
+                    ->map(function ($reactions) {
+                        return [
+                            'reaction' => $reactions->first()->reaction,
+                            'count' => $reactions->count(),
+                            'users' => $reactions->pluck('user')
+                        ];
+                    });
+
                 $commentData = [
                     'id' => $comment->id,
+                    'parent_comment_id' => $comment->parent_comment_id,
                     'comment_text' => $comment->comment_text,
                     'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
                     'media' => $comment->media ? json_decode($comment->media, true) : null,
@@ -815,7 +839,28 @@ class PostController extends Controller
                     'user' => $user ? app(AuthController::class)->mapUserDetails($user) : null,
                     'nesting_level' => $currentDepth,
                     'replies_count' => 0,
-                    'replies' => []
+                    'replies' => [],
+                    'comment_reactions' => [
+                        'user_reaction' => $userCommentReactionData ? [
+                            'id' => $userCommentReactionData->reaction->id,
+                            'name' => $userCommentReactionData->reaction->name,
+                            'content' => $userCommentReactionData->reaction->content,
+                            'image' => $userCommentReactionData->reaction->image_url,
+                            'video' => $userCommentReactionData->reaction->video_url
+                        ] : null,
+                        'reactions' => $reactionCounts->map(function ($item) {
+                            return [
+                                'id' => $item['reaction']->id,
+                                'name' => $item['reaction']->name,
+                                'content' => $item['reaction']->content,
+                                'image' => $item['reaction']->image_url,
+                                'video' => $item['reaction']->video_url,
+                                'count' => $item['count'],
+                                'users' => $this->mapUsersDetails($item['users'])
+                            ];
+                        })->values(),
+                        'total_reactions' => $totalCommentReactions
+                    ]
                 ];
                 
                 // Get direct replies count
@@ -823,7 +868,7 @@ class PostController extends Controller
                 
                 // Recursively build replies (limited depth for performance)
                 if ($currentDepth < $maxDepth - 1) {
-                    $commentData['replies'] = $this->buildCommentTree($comments, $users, $comment->id, $maxDepth, $currentDepth + 1);
+                    $commentData['replies'] = $this->buildCommentTree($comments, $users, $comment->id, $maxDepth, $currentDepth + 1, $commentReactions, $userCommentReactions);
                 }
                 
                 $tree[] = $commentData;
@@ -4441,6 +4486,7 @@ class PostController extends Controller
                     'comment' => [
                         'id' => $comment->id,
                         'post_id' => $comment->post_id,
+                        'parent_comment_id' => $comment->parent_comment_id,
                         'comment_text' => $comment->comment_text,
                         'mentions' => $comment->mentions ? json_decode($comment->mentions, true) : [],
                         'media' => $comment->media ? json_decode($comment->media, true) : null,
@@ -4753,6 +4799,22 @@ class PostController extends Controller
             // Get complete user data
             $users = User::whereIn('id', $userIds)->get()->keyBy('id');
 
+            // Get all comment IDs for reactions
+            $commentIds = $allComments->pluck('id');
+
+            // Get comment reactions data with user details
+            $commentReactions = CommentReaction::whereIn('comment_id', $commentIds)
+                ->with(['reaction', 'user'])
+                ->get()
+                ->groupBy('comment_id');
+
+            // Get user's reactions for these comments
+            $userCommentReactions = CommentReaction::where('user_id', $user->id)
+                ->whereIn('comment_id', $commentIds)
+                ->with('reaction')
+                ->get()
+                ->keyBy('comment_id');
+
             // Get main comments (top-level comments) for pagination
             $mainComments = $allComments->where('parent_comment_id', null);
             $totalMainComments = $mainComments->count();
@@ -4765,8 +4827,27 @@ class PostController extends Controller
             $commentsWithReplies = [];
             foreach ($paginatedMainComments as $mainComment) {
                 $user = $users->get($mainComment->user_id);
+                
+                // Get comment reactions data for this comment
+                $commentReactionData = $commentReactions->get($mainComment->id, collect());
+                $totalCommentReactions = $commentReactionData->count();
+                
+                // Get user's reaction for this comment
+                $userCommentReactionData = $userCommentReactions->get($mainComment->id);
+
+                // Group reactions by type and count them
+                $reactionCounts = $commentReactionData->groupBy('reaction_id')
+                    ->map(function ($reactions) {
+                        return [
+                            'reaction' => $reactions->first()->reaction,
+                            'count' => $reactions->count(),
+                            'users' => $reactions->pluck('user')
+                        ];
+                    });
+
                 $commentData = [
                     'id' => $mainComment->id,
+                    'parent_comment_id' => $mainComment->parent_comment_id,
                     'comment_text' => $mainComment->comment_text,
                     'mentions' => $mainComment->mentions ? json_decode($mainComment->mentions, true) : [],
                     'media' => $mainComment->media ? json_decode($mainComment->media, true) : null,
@@ -4774,7 +4855,28 @@ class PostController extends Controller
                     'user' => $user ? app(AuthController::class)->mapUserDetails($user) : null,
                     'nesting_level' => 0,
                     'replies_count' => 0,
-                    'replies' => []
+                    'replies' => [],
+                    'comment_reactions' => [
+                        'user_reaction' => $userCommentReactionData ? [
+                            'id' => $userCommentReactionData->reaction->id,
+                            'name' => $userCommentReactionData->reaction->name,
+                            'content' => $userCommentReactionData->reaction->content,
+                            'image' => $userCommentReactionData->reaction->image_url,
+                            'video' => $userCommentReactionData->reaction->video_url
+                        ] : null,
+                        'reactions' => $reactionCounts->map(function ($item) {
+                            return [
+                                'id' => $item['reaction']->id,
+                                'name' => $item['reaction']->name,
+                                'content' => $item['reaction']->content,
+                                'image' => $item['reaction']->image_url,
+                                'video' => $item['reaction']->video_url,
+                                'count' => $item['count'],
+                                'users' => $this->mapUsersDetails($item['users'])
+                            ];
+                        })->values(),
+                        'total_reactions' => $totalCommentReactions
+                    ]
                 ];
 
                 if ($loadReplies) {
@@ -4783,7 +4885,7 @@ class PostController extends Controller
                     $commentData['replies_count'] = $repliesForThisComment->count();
                     
                     // Build reply tree recursively (limited depth for performance)
-                    $commentData['replies'] = $this->buildCommentTree($allComments, $users, $mainComment->id, $maxDepth, 1);
+                    $commentData['replies'] = $this->buildCommentTree($allComments, $users, $mainComment->id, $maxDepth, 1, $commentReactions, $userCommentReactions);
                 } else {
                     // Just get the count without loading replies
                     $commentData['replies_count'] = $allComments->where('parent_comment_id', $mainComment->id)->count();
@@ -4794,12 +4896,19 @@ class PostController extends Controller
 
             $totalPages = ceil($totalMainComments / $perPage);
 
+            // Get reactions data from HomeController
+            $homeController = app(HomeController::class);
+            $reactionsRequest = new Request();
+            $reactionsResponse = $homeController->getReactions($reactionsRequest);
+            $reactionsData = json_decode($reactionsResponse->getContent(), true);
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Comments retrieved successfully',
                 'data' => [
                     'comments' => $commentsWithReplies,
+                    'reactions' => $reactionsData['success'] ? $reactionsData['data'] : [],
                     'pagination' => [
                         'current_page' => $page,
                         'per_page' => $perPage,
@@ -5258,7 +5367,7 @@ class PostController extends Controller
         }
     }
 
-  
+
     public function reactToComment(Request $request)
     {
         try {
@@ -5266,14 +5375,13 @@ class PostController extends Controller
             
             $validatedData = $request->validate([
                 'comment_id' => 'required|integer|exists:post_comments,id',
-                'reaction_type' => 'required|in:like,love,laugh,wow,sad,angry'
+                'reaction_id' => 'required|integer|exists:reactions,id'
             ]);
 
             DB::beginTransaction();
 
             // Get the comment
-            $comment = DB::table('post_comments')
-                ->where('id', $validatedData['comment_id'])
+            $comment = PostComment::where('id', $validatedData['comment_id'])
                 ->where('is_deleted', false)
                 ->first();
 
@@ -5285,9 +5393,18 @@ class PostController extends Controller
                 ], 404);
             }
 
+            // Check if reaction exists and is active
+            $reaction = Reaction::find($validatedData['reaction_id']);
+            if (!$reaction || !$reaction->isActive()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Reaction not found or not available'
+                ], 404);
+            }
+
             // Check if user can see the comment (privacy checks)
-            $post = DB::table('posts')
-                ->where('id', $comment->post_id)
+            $post = Post::where('id', $comment->post_id)
                 ->where('status', 'approved')
                 ->first();
 
@@ -5301,8 +5418,7 @@ class PostController extends Controller
 
             // Privacy check - only friends can react if post is friends-only
             if ($post->privacy === 'friends' && $post->user_id !== $user->id) {
-                $friendship = DB::table('friendships')
-                    ->where(function($query) use ($user, $post) {
+                $friendship = Friendship::where(function($query) use ($user, $post) {
                         $query->where('user_id', $user->id)
                               ->where('friend_id', $post->user_id);
                     })
@@ -5322,44 +5438,46 @@ class PostController extends Controller
                 }
             }
 
-            // Check if user already reacted to this comment
-            $existingReaction = DB::table('comment_reactions')
+            // Check if user already has a reaction on this comment
+            $existingReaction = CommentReaction::where('user_id', $user->id)
                 ->where('comment_id', $validatedData['comment_id'])
-                ->where('user_id', $user->id)
                 ->first();
 
             if ($existingReaction) {
                 // Update existing reaction
-                DB::table('comment_reactions')
-                    ->where('comment_id', $validatedData['comment_id'])
-                    ->where('user_id', $user->id)
-                    ->update([
-                        'reaction_type' => $validatedData['reaction_type'],
-                        'updated_at' => now()
-                    ]);
-            } else {
-                // Create new reaction
-                DB::table('comment_reactions')->insert([
-                    'comment_id' => $validatedData['comment_id'],
-                    'user_id' => $user->id,
-                    'reaction_type' => $validatedData['reaction_type'],
-                    'created_at' => now(),
+                $existingReaction->update([
+                    'reaction_id' => $validatedData['reaction_id'],
                     'updated_at' => now()
                 ]);
+
+                $action = 'updated';
+            } else {
+                // Create new reaction
+                CommentReaction::create([
+                    'comment_id' => $validatedData['comment_id'],
+                    'user_id' => $user->id,
+                    'reaction_id' => $validatedData['reaction_id']
+                ]);
+
+                $action = 'added';
             }
 
-            // Get updated reaction count for this comment
-            $reactionCounts = DB::table('comment_reactions')
-                ->where('comment_id', $validatedData['comment_id'])
-                ->select('reaction_type', DB::raw('count(*) as count'))
-                ->groupBy('reaction_type')
+            // Get updated reaction counts for this comment
+            $reactionCounts = CommentReaction::where('comment_id', $validatedData['comment_id'])
+                ->with('reaction')
                 ->get()
-                ->keyBy('reaction_type');
+                ->groupBy('reaction_id')
+                ->map(function ($reactions) {
+                    return [
+                        'reaction' => $reactions->first()->reaction,
+                        'count' => $reactions->count()
+                    ];
+                });
 
             // Get user's current reaction
-            $userReaction = DB::table('comment_reactions')
+            $userReaction = CommentReaction::where('user_id', $user->id)
                 ->where('comment_id', $validatedData['comment_id'])
-                ->where('user_id', $user->id)
+                ->with('reaction')
                 ->first();
 
             DB::commit();
@@ -5367,18 +5485,28 @@ class PostController extends Controller
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
-                'message' => 'Reaction updated successfully',
+                'message' => "Reaction {$action} successfully",
                 'data' => [
                     'comment_id' => $validatedData['comment_id'],
-                    'user_reaction' => $userReaction ? $userReaction->reaction_type : null,
-                    'reaction_counts' => [
-                        'like' => $reactionCounts->get('like')->count ?? 0,
-                        'love' => $reactionCounts->get('love')->count ?? 0,
-                        'laugh' => $reactionCounts->get('laugh')->count ?? 0,
-                        'wow' => $reactionCounts->get('wow')->count ?? 0,
-                        'sad' => $reactionCounts->get('sad')->count ?? 0,
-                        'angry' => $reactionCounts->get('angry')->count ?? 0
-                    ],
+                    'user_reaction' => $userReaction ? [
+                        'id' => $userReaction->reaction->id,
+                        'name' => $userReaction->reaction->name,
+                        'content' => $userReaction->reaction->content,
+                        'image' => $userReaction->reaction->image_url,
+                        'video' => $userReaction->reaction->video_url
+                    ] : null,
+                    'reaction_counts' => $reactionCounts->map(function ($item) {
+                        return [
+                            'reaction' => [
+                                'id' => $item['reaction']->id,
+                                'name' => $item['reaction']->name,
+                                'content' => $item['reaction']->content,
+                                'image' => $item['reaction']->image_url,
+                                'video' => $item['reaction']->video_url
+                            ],
+                            'count' => $item['count']
+                        ];
+                    })->values(),
                     'total_reactions' => $reactionCounts->sum('count')
                 ]
             ]);
@@ -5414,8 +5542,7 @@ class PostController extends Controller
             DB::beginTransaction();
 
             // Get the comment
-            $comment = DB::table('post_comments')
-                ->where('id', $validatedData['comment_id'])
+            $comment = PostComment::where('id', $validatedData['comment_id'])
                 ->where('is_deleted', false)
                 ->first();
 
@@ -5427,13 +5554,12 @@ class PostController extends Controller
                 ], 404);
             }
 
-            // Check if user has a reaction to remove
-            $existingReaction = DB::table('comment_reactions')
+            // Find and delete user's reaction
+            $userReaction = CommentReaction::where('user_id', $user->id)
                 ->where('comment_id', $validatedData['comment_id'])
-                ->where('user_id', $user->id)
                 ->first();
 
-            if (!$existingReaction) {
+            if (!$userReaction) {
                 return response()->json([
                     'status_code' => 404,
                     'success' => false,
@@ -5441,19 +5567,19 @@ class PostController extends Controller
                 ], 404);
             }
 
-            // Remove the reaction
-            DB::table('comment_reactions')
-                ->where('comment_id', $validatedData['comment_id'])
-                ->where('user_id', $user->id)
-                ->delete();
+            $userReaction->delete();
 
-            // Get updated reaction count for this comment
-            $reactionCounts = DB::table('comment_reactions')
-                ->where('comment_id', $validatedData['comment_id'])
-                ->select('reaction_type', DB::raw('count(*) as count'))
-                ->groupBy('reaction_type')
+            // Get updated reaction counts for this comment
+            $reactionCounts = CommentReaction::where('comment_id', $validatedData['comment_id'])
+                ->with('reaction')
                 ->get()
-                ->keyBy('reaction_type');
+                ->groupBy('reaction_id')
+                ->map(function ($reactions) {
+                    return [
+                        'reaction' => $reactions->first()->reaction,
+                        'count' => $reactions->count()
+                    ];
+                });
 
             DB::commit();
 
@@ -5464,14 +5590,18 @@ class PostController extends Controller
                 'data' => [
                     'comment_id' => $validatedData['comment_id'],
                     'user_reaction' => null,
-                    'reaction_counts' => [
-                        'like' => $reactionCounts->get('like')->count ?? 0,
-                        'love' => $reactionCounts->get('love')->count ?? 0,
-                        'laugh' => $reactionCounts->get('laugh')->count ?? 0,
-                        'wow' => $reactionCounts->get('wow')->count ?? 0,
-                        'sad' => $reactionCounts->get('sad')->count ?? 0,
-                        'angry' => $reactionCounts->get('angry')->count ?? 0
-                    ],
+                    'reaction_counts' => $reactionCounts->map(function ($item) {
+                        return [
+                            'reaction' => [
+                                'id' => $item['reaction']->id,
+                                'name' => $item['reaction']->name,
+                                'content' => $item['reaction']->content,
+                                'image' => $item['reaction']->image_url,
+                                'video' => $item['reaction']->video_url
+                            ],
+                            'count' => $item['count']
+                        ];
+                    })->values(),
                     'total_reactions' => $reactionCounts->sum('count')
                 ]
             ]);
@@ -5565,7 +5695,6 @@ class PostController extends Controller
 
             // Get all replies for this comment (including nested replies)
             $allReplies = DB::table('post_comments')
-                ->join('users', 'post_comments.user_id', '=', 'users.id')
                 ->where('post_comments.post_id', $parentComment->post_id)
                 ->where('post_comments.is_deleted', false)
                 ->whereNotExists(function($query) use ($user) {
@@ -5578,13 +5707,30 @@ class PostController extends Controller
                                       ->orWhere('hidden_comments.hide_type', 'permanent');
                           });
                 })
-                ->select(
-                    'post_comments.*',
-                    'users.first_name',
-                    'users.last_name'
-                )
                 ->orderBy('post_comments.created_at', 'asc')
                 ->get();
+
+            // Get all unique user IDs from replies
+            $userIds = $allReplies->pluck('user_id')->unique();
+            
+            // Get complete user data
+            $users = User::whereIn('id', $userIds)->get()->keyBy('id');
+
+            // Get all reply IDs for reactions
+            $replyIds = $allReplies->pluck('id');
+
+            // Get comment reactions data with user details
+            $commentReactions = CommentReaction::whereIn('comment_id', $replyIds)
+                ->with(['reaction', 'user'])
+                ->get()
+                ->groupBy('comment_id');
+
+            // Get user's reactions for these replies
+            $userCommentReactions = CommentReaction::where('user_id', $user->id)
+                ->whereIn('comment_id', $replyIds)
+                ->with('reaction')
+                ->get()
+                ->keyBy('comment_id');
 
             // Get direct replies for pagination
             $directReplies = $allReplies->where('parent_comment_id', $validatedData['comment_id']);
@@ -5596,20 +5742,57 @@ class PostController extends Controller
             // Build reply tree for paginated direct replies
             $repliesWithNested = [];
             foreach ($paginatedDirectReplies as $reply) {
+                $user = $users->get($reply->user_id);
+                
+                // Get comment reactions data for this reply
+                $commentReactionData = $commentReactions->get($reply->id, collect());
+                $totalCommentReactions = $commentReactionData->count();
+                
+                // Get user's reaction for this reply
+                $userCommentReactionData = $userCommentReactions->get($reply->id);
+
+                // Group reactions by type and count them
+                $reactionCounts = $commentReactionData->groupBy('reaction_id')
+                    ->map(function ($reactions) {
+                        return [
+                            'reaction' => $reactions->first()->reaction,
+                            'count' => $reactions->count(),
+                            'users' => $reactions->pluck('user')
+                        ];
+                    });
+
                 $replyData = [
                     'id' => $reply->id,
+                    'parent_comment_id' => $reply->parent_comment_id,
                     'comment_text' => $reply->comment_text,
                     'mentions' => $reply->mentions ? json_decode($reply->mentions, true) : [],
                     'media' => $reply->media ? json_decode($reply->media, true) : null,
                     'created_at' => $reply->created_at,
-                    'user' => [
-                        'id' => $reply->user_id,
-                        'first_name' => $reply->first_name,
-                        'last_name' => $reply->last_name
-                    ],
+                    'user' => $user ? app(AuthController::class)->mapUserDetails($user) : null,
                     'nesting_level' => $this->getCommentNestingLevel($reply->id),
                     'replies_count' => 0,
-                    'replies' => []
+                    'replies' => [],
+                    'comment_reactions' => [
+                        'user_reaction' => $userCommentReactionData ? [
+                            'id' => $userCommentReactionData->reaction->id,
+                            'name' => $userCommentReactionData->reaction->name,
+                            'content' => $userCommentReactionData->reaction->content,
+                            'image' => $userCommentReactionData->reaction->image_url,
+                            'video' => $userCommentReactionData->reaction->video_url
+                        ] : null,
+                        'reactions' => $reactionCounts->map(function ($item) {
+                            return [
+                                'id' => $item['reaction']->id,
+                                'name' => $item['reaction']->name,
+                                'content' => $item['reaction']->content,
+                                'image' => $item['reaction']->image_url,
+                                'video' => $item['reaction']->video_url,
+                                'count' => $item['count'],
+                                'users' => $this->mapUsersDetails($item['users'])
+                            ];
+                        })->values(),
+                        'total_reactions' => $totalCommentReactions
+                    ]
                 ];
 
                 // Get nested replies count
@@ -5617,12 +5800,18 @@ class PostController extends Controller
                 $replyData['replies_count'] = $nestedReplies->count();
                 
                 // Build nested reply tree (limited depth for performance)
-                $replyData['replies'] = $this->buildCommentTree($allReplies, $reply->id, $maxDepth - 1, 1);
+                $replyData['replies'] = $this->buildCommentTree($allReplies, $users, $reply->id, $maxDepth - 1, 1, $commentReactions, $userCommentReactions);
 
                 $repliesWithNested[] = $replyData;
             }
 
             $totalPages = ceil($totalDirectReplies / $perPage);
+
+            // Get reactions data from HomeController
+            $homeController = app(HomeController::class);
+            $reactionsRequest = new Request();
+            $reactionsResponse = $homeController->getReactions($reactionsRequest);
+            $reactionsData = json_decode($reactionsResponse->getContent(), true);
 
             return response()->json([
                 'status_code' => 200,
@@ -5631,6 +5820,7 @@ class PostController extends Controller
                 'data' => [
                     'parent_comment_id' => $validatedData['comment_id'],
                     'replies' => $repliesWithNested,
+                    'reactions' => $reactionsData['success'] ? $reactionsData['data'] : [],
                     'pagination' => [
                         'current_page' => $page,
                         'per_page' => $perPage,
@@ -5679,8 +5869,7 @@ class PostController extends Controller
             $offset = ($page - 1) * $perPage;
 
             // Get the comment
-            $comment = DB::table('post_comments')
-                ->where('id', $validatedData['comment_id'])
+            $comment = PostComment::where('id', $validatedData['comment_id'])
                 ->where('is_deleted', false)
                 ->first();
 
@@ -5693,8 +5882,7 @@ class PostController extends Controller
             }
 
             // Check if user can see the comment (privacy checks)
-            $post = DB::table('posts')
-                ->where('id', $comment->post_id)
+            $post = Post::where('id', $comment->post_id)
                 ->where('status', 'approved')
                 ->first();
 
@@ -5708,8 +5896,7 @@ class PostController extends Controller
 
             // Privacy check - only friends can see reactions if post is friends-only
             if ($post->privacy === 'friends' && $post->user_id !== $user->id) {
-                $friendship = DB::table('friendships')
-                    ->where(function($query) use ($user, $post) {
+                $friendship = Friendship::where(function($query) use ($user, $post) {
                         $query->where('user_id', $user->id)
                               ->where('friend_id', $post->user_id);
                     })
@@ -5729,54 +5916,57 @@ class PostController extends Controller
                 }
             }
 
-            // Get reaction counts
-            $reactionCounts = DB::table('comment_reactions')
-                ->where('comment_id', $validatedData['comment_id'])
-                ->select('reaction_type', DB::raw('count(*) as count'))
-                ->groupBy('reaction_type')
+            // Get reaction counts with user details
+            $reactionCounts = CommentReaction::where('comment_id', $validatedData['comment_id'])
+                ->with(['reaction', 'user'])
                 ->get()
-                ->keyBy('reaction_type');
+                ->groupBy('reaction_id')
+                ->map(function ($reactions) {
+                    return [
+                        'reaction' => $reactions->first()->reaction,
+                        'count' => $reactions->count(),
+                        'users' => $reactions->pluck('user')
+                    ];
+                });
 
             // Get user's reaction
-            $userReaction = DB::table('comment_reactions')
-                ->where('comment_id', $validatedData['comment_id'])
+            $userReaction = CommentReaction::where('comment_id', $validatedData['comment_id'])
                 ->where('user_id', $user->id)
+                ->with('reaction')
                 ->first();
 
             // Get paginated reactions with user details
-            $reactions = DB::table('comment_reactions')
-                ->join('users', 'comment_reactions.user_id', '=', 'users.id')
-                ->where('comment_reactions.comment_id', $validatedData['comment_id'])
-                ->select(
-                    'comment_reactions.*',
-                    'users.first_name',
-                    'users.last_name'
-                )
-                ->orderBy('comment_reactions.created_at', 'desc')
+            $reactions = CommentReaction::where('comment_id', $validatedData['comment_id'])
+                ->with(['reaction', 'user'])
+                ->orderBy('created_at', 'desc')
                 ->offset($offset)
                 ->limit($perPage)
                 ->get();
 
-            $formattedReactions = [];
-            foreach ($reactions as $reaction) {
-                $formattedReactions[] = [
+            $formattedReactions = $reactions->map(function ($reaction) {
+                return [
                     'id' => $reaction->id,
-                    'reaction_type' => $reaction->reaction_type,
+                    'reaction' => [
+                        'id' => $reaction->reaction->id,
+                        'name' => $reaction->reaction->name,
+                        'content' => $reaction->reaction->content,
+                        'image' => $reaction->reaction->image_url,
+                        'video' => $reaction->reaction->video_url
+                    ],
                     'created_at' => $reaction->created_at,
-                    'user' => [
-                        'id' => $reaction->user_id,
-                        'first_name' => $reaction->first_name,
-                        'last_name' => $reaction->last_name
-                    ]
+                    'user' => $this->mapUsersDetails(collect([$reaction->user]))->first()
                 ];
-            }
+            });
 
             // Get total count for pagination
-            $totalReactions = DB::table('comment_reactions')
-                ->where('comment_id', $validatedData['comment_id'])
-                ->count();
-
+            $totalReactions = CommentReaction::where('comment_id', $validatedData['comment_id'])->count();
             $totalPages = ceil($totalReactions / $perPage);
+
+            // Get reactions data from HomeController
+            $homeController = app(HomeController::class);
+            $reactionsRequest = new Request();
+            $reactionsResponse = $homeController->getReactions($reactionsRequest);
+            $reactionsData = json_decode($reactionsResponse->getContent(), true);
 
             return response()->json([
                 'status_code' => 200,
@@ -5784,17 +5974,29 @@ class PostController extends Controller
                 'message' => 'Comment reactions retrieved successfully',
                 'data' => [
                     'comment_id' => $validatedData['comment_id'],
-                    'user_reaction' => $userReaction ? $userReaction->reaction_type : null,
-                    'reaction_counts' => [
-                        'like' => $reactionCounts->get('like')->count ?? 0,
-                        'love' => $reactionCounts->get('love')->count ?? 0,
-                        'laugh' => $reactionCounts->get('laugh')->count ?? 0,
-                        'wow' => $reactionCounts->get('wow')->count ?? 0,
-                        'sad' => $reactionCounts->get('sad')->count ?? 0,
-                        'angry' => $reactionCounts->get('angry')->count ?? 0
-                    ],
+                    'user_reaction' => $userReaction ? [
+                        'id' => $userReaction->reaction->id,
+                        'name' => $userReaction->reaction->name,
+                        'content' => $userReaction->reaction->content,
+                        'image' => $userReaction->reaction->image_url,
+                        'video' => $userReaction->reaction->video_url
+                    ] : null,
+                    'reactions' => $reactionCounts->map(function ($item) {
+                        return [
+                            'reaction' => [
+                                'id' => $item['reaction']->id,
+                                'name' => $item['reaction']->name,
+                                'content' => $item['reaction']->content,
+                                'image' => $item['reaction']->image_url,
+                                'video' => $item['reaction']->video_url
+                            ],
+                            'count' => $item['count'],
+                            'users' => $this->mapUsersDetails($item['users'])
+                        ];
+                    })->values(),
                     'total_reactions' => $reactionCounts->sum('count'),
-                    'reactions' => $formattedReactions,
+                    'reaction_details' => $formattedReactions,
+                    'available_reactions' => $reactionsData['success'] ? $reactionsData['data'] : [],
                     'pagination' => [
                         'current_page' => $page,
                         'per_page' => $perPage,
@@ -5910,6 +6112,230 @@ class PostController extends Controller
                 'message' => 'Failed to delete comment',
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+
+    public function reactToPost(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id',
+                'reaction_id' => 'required|integer|exists:reactions,id'
+            ]);
+
+            DB::beginTransaction();
+
+            // Check if post exists and is approved
+            $post = DB::table('posts')
+                ->where('id', $validatedData['post_id'])
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$post) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post not found or not approved'
+                ]);
+            }
+
+            // Check if reaction exists and is active
+            $reaction = Reaction::find($validatedData['reaction_id']);
+            if (!$reaction || !$reaction->isActive()) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Reaction not found or not available'
+                ]);
+            }
+
+            // Check if user already has a reaction on this post
+            $existingReaction = PostReaction::where('user_id', $user->id)
+                ->where('post_id', $validatedData['post_id'])
+                ->first();
+
+            if ($existingReaction) {
+                // Update existing reaction
+                $existingReaction->update([
+                    'reaction_id' => $validatedData['reaction_id'],
+                    'updated_at' => now()
+                ]);
+
+                $action = 'updated';
+            } else {
+                // Create new reaction
+                PostReaction::create([
+                    'user_id' => $user->id,
+                    'post_id' => $validatedData['post_id'],
+                    'reaction_id' => $validatedData['reaction_id']
+                ]);
+
+                $action = 'added';
+            }
+
+            // Get updated reaction counts for this post
+            $reactionCounts = PostReaction::where('post_id', $validatedData['post_id'])
+                ->with('reaction')
+                ->get()
+                ->groupBy('reaction_id')
+                ->map(function ($reactions) {
+                    return [
+                        'reaction' => $reactions->first()->reaction,
+                        'count' => $reactions->count()
+                    ];
+                });
+
+            // Get user's current reaction
+            $userReaction = PostReaction::where('user_id', $user->id)
+                ->where('post_id', $validatedData['post_id'])
+                ->with('reaction')
+                ->first();
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => "Reaction {$action} successfully",
+                'data' => [
+                    'post_id' => $validatedData['post_id'],
+                    'user_reaction' => $userReaction ? [
+                        'id' => $userReaction->reaction->id,
+                        'name' => $userReaction->reaction->name,
+                        'content' => $userReaction->reaction->content,
+                        'image' => $userReaction->reaction->image_url,
+                        'video' => $userReaction->reaction->video_url
+                    ] : null,
+                    'reaction_counts' => $reactionCounts->map(function ($item) {
+                        return [
+                            'reaction' => [
+                                'id' => $item['reaction']->id,
+                                'name' => $item['reaction']->name,
+                                'content' => $item['reaction']->content,
+                                'image' => $item['reaction']->image_url,
+                                'video' => $item['reaction']->video_url
+                            ],
+                            'count' => $item['count']
+                        ];
+                    })->values(),
+                    'total_reactions' => $reactionCounts->sum('count')
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to react to post',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function removePostReaction(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            $validatedData = $request->validate([
+                'post_id' => 'required|integer|exists:posts,id'
+            ]);
+
+            DB::beginTransaction();
+
+            // Check if post exists
+            $post = DB::table('posts')
+                ->where('id', $validatedData['post_id'])
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$post) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'Post not found or not approved'
+                ]);
+            }
+
+            // Find and delete user's reaction
+            $userReaction = PostReaction::where('user_id', $user->id)
+                ->where('post_id', $validatedData['post_id'])
+                ->first();
+
+            if (!$userReaction) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'No reaction found to remove'
+                ]);
+            }
+
+            $userReaction->delete();
+
+            // Get updated reaction counts for this post
+            $reactionCounts = PostReaction::where('post_id', $validatedData['post_id'])
+                ->with('reaction')
+                ->get()
+                ->groupBy('reaction_id')
+                ->map(function ($reactions) {
+                    return [
+                        'reaction' => $reactions->first()->reaction,
+                        'count' => $reactions->count()
+                    ];
+                });
+
+            DB::commit();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Reaction removed successfully',
+                'data' => [
+                    'post_id' => $validatedData['post_id'],
+                    'user_reaction' => null,
+                    'reaction_counts' => $reactionCounts->map(function ($item) {
+                        return [
+                            'reaction' => [
+                                'id' => $item['reaction']->id,
+                                'name' => $item['reaction']->name,
+                                'content' => $item['reaction']->content,
+                                'image' => $item['reaction']->image_url,
+                                'video' => $item['reaction']->video_url
+                            ],
+                            'count' => $item['count']
+                        ];
+                    })->values(),
+                    'total_reactions' => $reactionCounts->sum('count')
+                ]
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to remove reaction',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -6061,10 +6487,30 @@ class PostController extends Controller
                 ->pluck('post_id')
                 ->flip();
 
-            $mapped = $slice->map(function($post) use ($commentCounts, $reactionCountsFriend, $reactionCountsSuggested, $savedPostIds, $friendIds) {
+            // Get post reactions data with user details
+            $postReactions = PostReaction::whereIn('post_id', $postIds)
+                ->with(['reaction', 'user'])
+                ->get()
+                ->groupBy('post_id');
+
+            // Get user's reactions for these posts
+            $userReactions = PostReaction::where('user_id', $user->id)
+                ->whereIn('post_id', $postIds)
+                ->with('reaction')
+                ->get()
+                ->keyBy('post_id');
+
+            $mapped = $slice->map(function($post) use ($commentCounts, $reactionCountsFriend, $reactionCountsSuggested, $savedPostIds, $friendIds, $postReactions, $userReactions) {
                 $data = $post->toArray();
                 $data['comments_count'] = (int) ($commentCounts[$post->id] ?? 0);
-                $data['reactions_count'] = (int) (($reactionCountsFriend[$post->id] ?? 0) + ($reactionCountsSuggested[$post->id] ?? 0));
+                
+                // Get post reactions data for this post
+                $postReactionData = $postReactions->get($post->id, collect());
+                $totalPostReactions = $postReactionData->count();
+                
+                // Use new post reactions count instead of old interest feedback
+                $data['reactions_count'] = $totalPostReactions;
+                
                 $data['is_saved'] = $savedPostIds->has($post->id);
                 $data['is_user_friend'] = $friendIds->contains($post->user_id);
                 // Map user data using mapUsersDetails function
@@ -6089,10 +6535,51 @@ class PostController extends Controller
                 if (isset($data['mentions']) && empty(array_filter($data['mentions']))) {
                     $data['mentions'] = null;
                 }
+
+                // Add post reactions data
+                $userReactionData = $userReactions->get($post->id);
+
+                // Group reactions by type and count them
+                $reactionCounts = $postReactionData->groupBy('reaction_id')
+                    ->map(function ($reactions) {
+                        return [
+                            'reaction' => $reactions->first()->reaction,
+                            'count' => $reactions->count(),
+                            'users' => $reactions->pluck('user')
+                        ];
+                    });
+
+                $data['post_reactions'] = [
+                    'user_reaction' => $userReactionData ? [
+                        'id' => $userReactionData->reaction->id,
+                        'name' => $userReactionData->reaction->name,
+                        'content' => $userReactionData->reaction->content,
+                        'image' => $userReactionData->reaction->image_url,
+                        'video' => $userReactionData->reaction->video_url
+                    ] : null,
+                    'reactions' => $reactionCounts->map(function ($item) {
+                        return [
+                            'id' => $item['reaction']->id,
+                            'name' => $item['reaction']->name,
+                            'content' => $item['reaction']->content,
+                            'image' => $item['reaction']->image_url,
+                            'video' => $item['reaction']->video_url,
+                            'count' => $item['count'],
+                            'users' => $this->mapUsersDetails($item['users'])
+                        ];
+                    })->values(),
+                    'total_reactions' => $totalPostReactions
+                ];
                 
                 // Date fields already present: created_at, updated_at
                 return $data;
             });
+
+            // Get reactions data from HomeController
+            $homeController = app(HomeController::class);
+            $reactionsRequest = new Request();
+            $reactionsResponse = $homeController->getReactions($reactionsRequest);
+            $reactionsData = json_decode($reactionsResponse->getContent(), true);
 
             return response()->json([
                 'status_code' => 200,
@@ -6100,6 +6587,7 @@ class PostController extends Controller
                 'message' => 'Feed retrieved successfully',
                 'data' => [
                     'posts' => $mapped,
+                    'reactions' => $reactionsData['success'] ? $reactionsData['data'] : [],
                     'pagination' => [
                         'current_page' => $page,
                         'per_page' => $perPage,

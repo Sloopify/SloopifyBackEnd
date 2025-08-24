@@ -11,18 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('comment_reactions', function (Blueprint $table) {
+        Schema::create('post_reactions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('comment_id')->constrained('post_comments')->onDelete('cascade');
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('post_id')->constrained('posts')->onDelete('cascade');
             $table->foreignId('reaction_id')->constrained('reactions')->onDelete('cascade');
             $table->timestamps();
             
-            // Ensure a user can only have one reaction per comment
-            $table->unique(['comment_id', 'user_id']);
+            // Ensure a user can only have one reaction per post
+            $table->unique(['user_id', 'post_id']);
             
             // Indexes for better performance
-            $table->index(['comment_id', 'reaction_id']);
+            $table->index(['post_id', 'reaction_id']);
             $table->index(['user_id', 'reaction_id']);
         });
     }
@@ -32,6 +32,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('comment_reactions');
+        Schema::dropIfExists('post_reactions');
     }
 };
