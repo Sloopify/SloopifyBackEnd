@@ -17,7 +17,7 @@ class ReactionSeeder extends Seeder
             [
                 'name' => 'go_on',
                 'content' => 'Go on, please',
-                'image' => null,
+                'image' => 'Reactions/Image/go_on.svg',
                 'video' => null,
                 'status' => 'active',
                 'is_default' => true
@@ -25,7 +25,7 @@ class ReactionSeeder extends Seeder
             [
                 'name' => 'sad',
                 'content' => 'It made me sad',
-                'image' => null,
+                'image' => 'Reactions/Image/sad.svg',
                 'video' => null,
                 'status' => 'active',
                 'is_default' => true
@@ -33,7 +33,7 @@ class ReactionSeeder extends Seeder
             [
                 'name' => 'mad',
                 'content' => 'He made me mad',
-                'image' => null,
+                'image' => 'Reactions/Image/mad.svg',
                 'video' => null,
                 'status' => 'active',
                 'is_default' => true
@@ -41,7 +41,7 @@ class ReactionSeeder extends Seeder
             [
                 'name' => 'touched',
                 'content' => 'It touched me',
-                'image' => null,
+                'image' => 'Reactions/Image/touched.svg',
                 'video' => null,
                 'status' => 'active',
                 'is_default' => true
@@ -49,7 +49,7 @@ class ReactionSeeder extends Seeder
             [
                 'name' => 'wonderful',
                 'content' => 'wonderful',
-                'image' => null,
+                'image' => 'Reactions/Image/wonderful.svg',
                 'video' => null,
                 'status' => 'active',
                 'is_default' => true

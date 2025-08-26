@@ -82,12 +82,36 @@ class HomeController extends Controller
         }
         
         return $reactions->map(function ($reaction) {
+            // Helper function to properly format URL
+            $formatUrl = function($url) {
+                if (empty($url)) {
+                    return null;
+                }
+                
+                // If it's already a full URL, return as is
+                if (filter_var($url, FILTER_VALIDATE_URL)) {
+                    return $url;
+                }
+                
+                // If it starts with storage/, remove it to avoid double paths
+                if (str_starts_with($url, 'storage/')) {
+                    $url = substr($url, 8); // Remove 'storage/' prefix
+                }
+                
+                // If it's a relative path, add storage prefix
+                if (!str_starts_with($url, 'http')) {
+                    return asset('storage/' . $url);
+                }
+                
+                return $url;
+            };
+            
             return [
                 'id' => $reaction->id,
                 'name' => $reaction->name,
                 'content' => $reaction->content,
-                'image' => $reaction->image_url ? config('app.url') . asset('storage/' . $reaction->image_url) : null,
-                'video' => $reaction->video_url ? config('app.url') . asset('storage/' . $reaction->video_url) : null,
+                'image' => $formatUrl($reaction->image_url),
+                'video' => $formatUrl($reaction->video_url),
                 'status' => $reaction->status,
                 'is_default' => $reaction->is_default,
                 'created_at' => $reaction->created_at,
