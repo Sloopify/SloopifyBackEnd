@@ -187,6 +187,30 @@ class PostController extends Controller
         })->values();
     }
 
+    private function formatReactionUrl($url)
+    {
+        if (empty($url)) {
+            return null;
+        }
+        
+        // If it's already a full URL, return as is
+        if (filter_var($url, FILTER_VALIDATE_URL)) {
+            return $url;
+        }
+        
+        // If it starts with storage/, remove it to avoid double paths
+        if (str_starts_with($url, 'storage/')) {
+            $url = substr($url, 8); // Remove 'storage/' prefix
+        }
+        
+        // If it's a relative path, add storage prefix
+        if (!str_starts_with($url, 'http')) {
+            return asset('storage/' . $url);
+        }
+        
+        return $url;
+    }
+
     public function createPost(Request $request)
     {
         try {
@@ -845,16 +869,16 @@ class PostController extends Controller
                             'id' => $userCommentReactionData->reaction->id,
                             'name' => $userCommentReactionData->reaction->name,
                             'content' => $userCommentReactionData->reaction->content,
-                            'image' => $userCommentReactionData->reaction->image_url,
-                            'video' => $userCommentReactionData->reaction->video_url
+                            'image' => $this->formatReactionUrl($userCommentReactionData->reaction->image_url),
+                            'video' => $this->formatReactionUrl($userCommentReactionData->reaction->video_url)
                         ] : null,
                         'reactions' => $reactionCounts->map(function ($item) {
                             return [
                                 'id' => $item['reaction']->id,
                                 'name' => $item['reaction']->name,
                                 'content' => $item['reaction']->content,
-                                'image' => $item['reaction']->image_url,
-                                'video' => $item['reaction']->video_url,
+                                'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                                'video' => $this->formatReactionUrl($item['reaction']->video_url),
                                 'count' => $item['count'],
                                 'users' => $this->mapUsersDetails($item['users'])
                             ];
@@ -4861,16 +4885,16 @@ class PostController extends Controller
                             'id' => $userCommentReactionData->reaction->id,
                             'name' => $userCommentReactionData->reaction->name,
                             'content' => $userCommentReactionData->reaction->content,
-                            'image' => $userCommentReactionData->reaction->image_url,
-                            'video' => $userCommentReactionData->reaction->video_url
+                            'image' => $this->formatReactionUrl($userCommentReactionData->reaction->image_url),
+                            'video' => $this->formatReactionUrl($userCommentReactionData->reaction->video_url)
                         ] : null,
                         'reactions' => $reactionCounts->map(function ($item) {
                             return [
                                 'id' => $item['reaction']->id,
                                 'name' => $item['reaction']->name,
                                 'content' => $item['reaction']->content,
-                                'image' => $item['reaction']->image_url,
-                                'video' => $item['reaction']->video_url,
+                                'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                                'video' => $this->formatReactionUrl($item['reaction']->video_url),
                                 'count' => $item['count'],
                                 'users' => $this->mapUsersDetails($item['users'])
                             ];
@@ -5492,8 +5516,8 @@ class PostController extends Controller
                         'id' => $userReaction->reaction->id,
                         'name' => $userReaction->reaction->name,
                         'content' => $userReaction->reaction->content,
-                        'image' => $userReaction->reaction->image_url,
-                        'video' => $userReaction->reaction->video_url
+                        'image' => $this->formatReactionUrl($userReaction->reaction->image_url),
+                        'video' => $this->formatReactionUrl($userReaction->reaction->video_url)
                     ] : null,
                     'reaction_counts' => $reactionCounts->map(function ($item) {
                         return [
@@ -5501,8 +5525,8 @@ class PostController extends Controller
                                 'id' => $item['reaction']->id,
                                 'name' => $item['reaction']->name,
                                 'content' => $item['reaction']->content,
-                                'image' => $item['reaction']->image_url,
-                                'video' => $item['reaction']->video_url
+                                'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                                'video' => $this->formatReactionUrl($item['reaction']->video_url)
                             ],
                             'count' => $item['count']
                         ];
@@ -5596,8 +5620,8 @@ class PostController extends Controller
                                 'id' => $item['reaction']->id,
                                 'name' => $item['reaction']->name,
                                 'content' => $item['reaction']->content,
-                                'image' => $item['reaction']->image_url,
-                                'video' => $item['reaction']->video_url
+                                'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                                'video' => $this->formatReactionUrl($item['reaction']->video_url)
                             ],
                             'count' => $item['count']
                         ];
@@ -5777,16 +5801,16 @@ class PostController extends Controller
                             'id' => $userCommentReactionData->reaction->id,
                             'name' => $userCommentReactionData->reaction->name,
                             'content' => $userCommentReactionData->reaction->content,
-                            'image' => $userCommentReactionData->reaction->image_url,
-                            'video' => $userCommentReactionData->reaction->video_url
+                            'image' => $this->formatReactionUrl($userCommentReactionData->reaction->image_url),
+                            'video' => $this->formatReactionUrl($userCommentReactionData->reaction->video_url)
                         ] : null,
                         'reactions' => $reactionCounts->map(function ($item) {
                             return [
                                 'id' => $item['reaction']->id,
                                 'name' => $item['reaction']->name,
                                 'content' => $item['reaction']->content,
-                                'image' => $item['reaction']->image_url,
-                                'video' => $item['reaction']->video_url,
+                                'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                                'video' => $this->formatReactionUrl($item['reaction']->video_url),
                                 'count' => $item['count'],
                                 'users' => $this->mapUsersDetails($item['users'])
                             ];
@@ -5950,8 +5974,8 @@ class PostController extends Controller
                         'id' => $reaction->reaction->id,
                         'name' => $reaction->reaction->name,
                         'content' => $reaction->reaction->content,
-                        'image' => $reaction->reaction->image_url,
-                        'video' => $reaction->reaction->video_url
+                        'image' => $this->formatReactionUrl($reaction->reaction->image_url),
+                        'video' => $this->formatReactionUrl($reaction->reaction->video_url)
                     ],
                     'created_at' => $reaction->created_at,
                     'user' => $this->mapUsersDetails(collect([$reaction->user]))->first()
@@ -5978,8 +6002,8 @@ class PostController extends Controller
                         'id' => $userReaction->reaction->id,
                         'name' => $userReaction->reaction->name,
                         'content' => $userReaction->reaction->content,
-                        'image' => $userReaction->reaction->image_url,
-                        'video' => $userReaction->reaction->video_url
+                        'image' => $this->formatReactionUrl($userReaction->reaction->image_url),
+                        'video' => $this->formatReactionUrl($userReaction->reaction->video_url)
                     ] : null,
                     'reactions' => $reactionCounts->map(function ($item) {
                         return [
@@ -5987,8 +6011,8 @@ class PostController extends Controller
                                 'id' => $item['reaction']->id,
                                 'name' => $item['reaction']->name,
                                 'content' => $item['reaction']->content,
-                                'image' => $item['reaction']->image_url,
-                                'video' => $item['reaction']->video_url
+                                'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                                'video' => $this->formatReactionUrl($item['reaction']->video_url)
                             ],
                             'count' => $item['count'],
                             'users' => $this->mapUsersDetails($item['users'])
@@ -6205,8 +6229,8 @@ class PostController extends Controller
                         'id' => $userReaction->reaction->id,
                         'name' => $userReaction->reaction->name,
                         'content' => $userReaction->reaction->content,
-                        'image' => $userReaction->reaction->image_url,
-                        'video' => $userReaction->reaction->video_url
+                        'image' => $this->formatReactionUrl($userReaction->reaction->image_url),
+                        'video' => $this->formatReactionUrl($userReaction->reaction->video_url)
                     ] : null,
                     'reaction_counts' => $reactionCounts->map(function ($item) {
                         return [
@@ -6214,8 +6238,8 @@ class PostController extends Controller
                                 'id' => $item['reaction']->id,
                                 'name' => $item['reaction']->name,
                                 'content' => $item['reaction']->content,
-                                'image' => $item['reaction']->image_url,
-                                'video' => $item['reaction']->video_url
+                                'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                                'video' => $this->formatReactionUrl($item['reaction']->video_url)
                             ],
                             'count' => $item['count']
                         ];
@@ -6310,8 +6334,8 @@ class PostController extends Controller
                                 'id' => $item['reaction']->id,
                                 'name' => $item['reaction']->name,
                                 'content' => $item['reaction']->content,
-                                'image' => $item['reaction']->image_url,
-                                'video' => $item['reaction']->video_url
+                                'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                                'video' => $this->formatReactionUrl($item['reaction']->video_url)
                             ],
                             'count' => $item['count']
                         ];
@@ -6554,16 +6578,16 @@ class PostController extends Controller
                         'id' => $userReactionData->reaction->id,
                         'name' => $userReactionData->reaction->name,
                         'content' => $userReactionData->reaction->content,
-                        'image' => $userReactionData->reaction->image_url,
-                        'video' => $userReactionData->reaction->video_url
+                        'image' => $this->formatReactionUrl($userReactionData->reaction->image_url),
+                        'video' => $this->formatReactionUrl($userReactionData->reaction->video_url)
                     ] : null,
                     'reactions' => $reactionCounts->map(function ($item) {
                         return [
                             'id' => $item['reaction']->id,
                             'name' => $item['reaction']->name,
                             'content' => $item['reaction']->content,
-                            'image' => $item['reaction']->image_url,
-                            'video' => $item['reaction']->video_url,
+                            'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                            'video' => $this->formatReactionUrl($item['reaction']->video_url),
                             'count' => $item['count'],
                             'users' => $this->mapUsersDetails($item['users'])
                         ];

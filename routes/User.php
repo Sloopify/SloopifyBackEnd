@@ -8,7 +8,7 @@ use App\Http\Controllers\Api\V1\User\Friend\FriendController;
 use App\Http\Controllers\Api\V1\User\Settings\Sessions\SessionController;
 use App\Http\Controllers\Api\V1\User\Story\StoryController;
 use App\Http\Controllers\Api\V1\User\Home\HomeController;
-
+use App\Http\Controllers\Api\V1\User\Profile\ProfileController;
 
 //=================================== User Auth Routes =============================
 
@@ -367,5 +367,19 @@ Route::group(['prefix' => 'api/v1'], function () {
       });
     });
 
+    //=================================== User Profile =============================
+
+    Route::group(['prefix' => 'profile' , 'middleware' => ['user.auth']], function () {
+
+      Route::group(['controller' => ProfileController::class], function () {
+
+        Route::post('/get-profile' , 'getProfile');
+
+        Route::post('/search-profile' , 'searchProfile');
+
+        Route::post('/get-profile-by-id' , 'getProfileById');
+
+      });
+    });
   });  
 

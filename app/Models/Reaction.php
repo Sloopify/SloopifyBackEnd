@@ -39,7 +39,7 @@ class Reaction extends Model
     public function getImageUrlAttribute()
     {
         if ($this->image) {
-            return config('app.url') . '/public/storage/reactions/' . $this->image;
+            return config('app.url') . '/public/storage/' . $this->image;
         }
         return null;
     }
@@ -50,7 +50,7 @@ class Reaction extends Model
     public function getVideoUrlAttribute()
     {
         if ($this->video) {
-            return config('app.url') . '/public/storage/reactions/' . $this->video;
+            return config('app.url') . '/public/storage/' . $this->video;
         }
         return null;
     }
