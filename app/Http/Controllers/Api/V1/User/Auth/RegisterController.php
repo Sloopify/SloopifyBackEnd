@@ -75,6 +75,28 @@ class RegisterController extends Controller
                     'referral_code' => Str::random(6),
                 ]);
 
+                // Generate unique username: first_last_number
+                $base = Str::slug($user->first_name . '_' . $user->last_name, '_');
+                if ($base === '' || $base === '_') {
+                    $base = 'user';
+                }
+
+                $candidate = $base;
+                $attempt = 0;
+                while (User::where('user_name', $candidate)->exists()) {
+                    // Append a random 8-digit number each attempt to avoid long loops
+                    $candidate = $base . '_' . str_pad((string)random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+                    $attempt++;
+                    if ($attempt > 20) {
+                        // Fallback with uuid segment to guarantee uniqueness
+                        $candidate = $base . '_' . Str::uuid()->toString();
+                        break;
+                    }
+                }
+
+                $user->user_name = $candidate;
+                $user->save();
+
                 // Map user details and return the response data
                 $userDetails = (new AuthController($sessionService))->mapUserDetails($user);
                 
@@ -367,66 +389,6 @@ class RegisterController extends Controller
             ], 500);
         }
     }
-
-    // public function getInterests(Request $request)
-    // {
-    //     try{
-    //     $validatedData = $request->validate([
-    //         'perPage' => 'nullable|integer|min:1|max:100',
-    //         'page' => 'nullable|integer|min:1',
-    //     ]);
-
-    //     $perPage = $validatedData['perPage'] ?? 10;
-    //     $page = $validatedData['page'] ?? 1;
-        
-    //     $interests = Interest::where('status', 'active')->paginate($perPage, ['*'], 'page', $page);
-        
-    //     if($interests->isEmpty()){
-    //         return response()->json([
-    //             'status_code' => 404,
-    //             'success' => false,
-    //             'message' => 'No interests found',    
-    //         ], 404);
-    //     }
-        
-    //     $interestDetails = $this->mapInterests($interests->items());
-        
-    //     return response()->json([
-    //         'status_code' => 200,
-    //         'success' => true,
-    //         'message' => 'Interests fetched successfully',
-    //         'data' => [
-    //             'interests' => $interestDetails,
-    //             'pagination' => [
-    //                 'current_page' => $interests->currentPage(),
-    //                 'last_page' => $interests->lastPage(),
-    //                 'per_page' => $interests->perPage(),
-    //                 'total' => $interests->total(),
-    //                 'from' => $interests->firstItem(),
-    //                 'to' => $interests->lastItem(),
-    //                 'has_more_pages' => $interests->hasMorePages(),
-    //                 'requested_page' => $page,
-    //             ],
-    //         ]
-    //     ], 200);
-    //     }
-    //     catch (ValidationException $e) {
-    //         return response()->json([
-    //             'status_code' => 422,
-    //             'success' => false,
-    //             'message' => 'Validation failed',
-    //             'errors' => $e->errors()
-    //         ], 422);
-    //     }
-    //     catch (Exception $e) {
-    //         return response()->json([
-    //             'status_code' => 500,
-    //             'success' => false,
-    //             'message' => 'An unexpected error occurred',
-    //             'error' => $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
 
     public function getInterestsByCategoryName(Request $request)
     {
