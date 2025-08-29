@@ -373,11 +373,9 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       Route::group(['controller' => ProfileController::class], function () {
 
-        Route::post('/get-profile' , 'getProfile');
+        Route::post('/get-my-info' , 'getMyInfo');
 
-        Route::post('/search-profile' , 'searchProfile');
-
-        Route::post('/get-profile-by-id' , 'getProfileById');
+        Route::post('/get-total-posts' , 'getTotalPosts');
 
       });
     });
