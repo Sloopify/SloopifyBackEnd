@@ -26,6 +26,7 @@ return new class extends Migration
             $table->date('birthday')->nullable();
             $table->string('phone');
             $table->string('img')->nullable();
+            $table->string('cover_photo')->nullable();
             $table->string('bio')->nullable();
             $table->string('referral_code')->nullable();
             $table->string('referral_link')->nullable();
