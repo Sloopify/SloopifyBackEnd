@@ -60,6 +60,7 @@ class AuthController extends Controller
             'city' => $user->city,
             'provider' => $user->provider,
             'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : null),
+            'cover_photo' => $user->cover_photo ? config('app.url') . asset('storage/' . $user->cover_photo) : null,
             'referral_code' => $user->referral_code,
             'referral_link' => $user->referral_link,
             'reffered_by' => $user->reffered_by,
