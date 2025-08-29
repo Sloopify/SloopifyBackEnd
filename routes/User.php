@@ -377,6 +377,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/get-total-posts' , 'getTotalPosts');
 
+        Route::post('/get-total-friends' , 'getTotalFriends');
+
       });
     });
   });  
