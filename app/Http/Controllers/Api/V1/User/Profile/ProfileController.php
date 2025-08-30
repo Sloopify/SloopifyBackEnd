@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\User\Auth\AuthController;
 use App\Models\Post;
 use App\Models\Friendship;
 use App\Models\UserEducation;
+use App\Models\UserJob;
 use Illuminate\Validation\ValidationException;
 use Exception;
 
@@ -35,6 +36,34 @@ class ProfileController extends Controller
                 'sort_order' => $education->sort_order,
                 'created_at' => $education->created_at,
                 'updated_at' => $education->updated_at
+            ];
+        });
+    }
+    private function mapJobDetails($jobs)
+    {
+        return $jobs->map(function ($job) {
+            return [
+                'id' => $job->id,
+                'job_title' => $job->job_title,
+                'company_name' => $job->company_name,
+                'location' => $job->location,
+                'employment_type' => $job->employment_type,
+                'employment_type_display' => $job->employment_type_display,
+                'start_date' => $job->start_date,
+                'end_date' => $job->end_date,
+                'duration' => $job->duration,
+                'duration_in_months' => $job->duration_in_months,
+                'duration_in_years_months' => $job->duration_in_years_months,
+                'industry' => $job->industry,
+                'job_description' => $job->job_description,
+                'responsibilities' => $job->responsibilities,
+                'skills_used' => $job->skills_used,
+                'is_current_job' => $job->is_current_job,
+                'is_previous_job' => $job->is_previous_job,
+                'is_currently_working' => $job->is_currently_working,
+                'sort_order' => $job->sort_order,
+                'created_at' => $job->created_at,
+                'updated_at' => $job->updated_at
             ];
         });
     }
@@ -234,5 +263,139 @@ class ProfileController extends Controller
         }
     }
 
- 
+    public function getMyJobs(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'sort_by' => 'nullable|string|in:job_title,company_name,start_date,end_date,created_at',
+                'sort_order' => 'nullable|string|in:asc,desc',
+                'employment_type' => 'nullable|string|in:full_time,part_time,internship,freelance,contract,self_employed,all',
+                'job_status' => 'nullable|string|in:current,previous,all'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $sortBy = $validatedData['sort_by'] ?? 'created_at';
+            $sortOrder = $validatedData['sort_order'] ?? 'desc';
+            $employmentTypeFilter = $validatedData['employment_type'] ?? 'all';
+            $jobStatusFilter = $validatedData['job_status'] ?? 'all';
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Build query
+            $query = UserJob::where('user_id', $user->id);
+
+            // Apply employment type filter
+            if ($employmentTypeFilter !== 'all') {
+                $query->where('employment_type', $employmentTypeFilter);
+            }
+
+            // Apply job status filter
+            if ($jobStatusFilter === 'current') {
+                $query->where('is_current_job', true);
+            } elseif ($jobStatusFilter === 'previous') {
+                $query->where('is_previous_job', true);
+            }
+
+            // Apply sorting
+            if ($sortBy === 'job_title') {
+                $query->orderBy('job_title', $sortOrder);
+            } elseif ($sortBy === 'company_name') {
+                $query->orderBy('company_name', $sortOrder);
+            } elseif ($sortBy === 'start_date') {
+                $query->orderBy('start_date', $sortOrder);
+            } elseif ($sortBy === 'end_date') {
+                $query->orderBy('end_date', $sortOrder);
+            } else {
+                $query->orderBy('created_at', $sortOrder);
+            }
+
+            // Get jobs with pagination
+            $jobs = $query->paginate($perPage);
+
+            if ($jobs->isEmpty()) {
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No jobs found',
+                    'data' => [
+                        'jobs' => [],
+                        'total_jobs' => 0,
+                        'current_filters' => [
+                            'employment_type' => $employmentTypeFilter,
+                            'job_status' => $jobStatusFilter
+                        ],
+                        'sorting' => [
+                            'sort_by' => $sortBy,
+                            'sort_order' => $sortOrder
+                        ],
+                        'pagination' => [
+                            'current_page' => $jobs->currentPage(),
+                            'last_page' => $jobs->lastPage(),
+                            'per_page' => $jobs->perPage(),
+                            'total' => $jobs->total(),
+                            'from' => $jobs->firstItem(),
+                            'to' => $jobs->lastItem(),
+                            'has_more_pages' => $jobs->hasMorePages()
+                        ]
+                    ]
+                ], 200);
+            }
+
+            // Map jobs data with additional computed attributes
+            $mappedJobs = $this->mapJobDetails($jobs->getCollection());
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'My jobs fetched successfully',
+                'data' => [
+                    'jobs' => $mappedJobs,
+                    'total_jobs' => $jobs->total(),
+                    'current_filters' => [
+                        'employment_type' => $employmentTypeFilter,
+                        'job_status' => $jobStatusFilter
+                    ],
+                    'sorting' => [
+                        'sort_by' => $sortBy,
+                        'sort_order' => $sortOrder
+                    ],
+                    'pagination' => [
+                        'current_page' => $jobs->currentPage(),
+                        'last_page' => $jobs->lastPage(),
+                        'per_page' => $jobs->perPage(),
+                        'total' => $jobs->total(),
+                        'from' => $jobs->firstItem(),
+                        'to' => $jobs->lastItem(),
+                        'has_more_pages' => $jobs->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to fetch jobs',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+   
 }

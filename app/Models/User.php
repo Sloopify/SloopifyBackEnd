@@ -220,6 +220,30 @@ class User extends Authenticatable
     }
 
     /**
+     * Get user job records
+     */
+    public function jobs()
+    {
+        return $this->hasMany(UserJob::class)->orderBy('sort_order', 'asc');
+    }
+
+    /**
+     * Get current jobs
+     */
+    public function currentJobs()
+    {
+        return $this->hasMany(UserJob::class)->current();
+    }
+
+    /**
+     * Get previous jobs
+     */
+    public function previousJobs()
+    {
+        return $this->hasMany(UserJob::class)->previous();
+    }
+
+    /**
      * Terminate all sessions except current
      */
     public function terminateOtherSessions($currentSessionToken = null)
