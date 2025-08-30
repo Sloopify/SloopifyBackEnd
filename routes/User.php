@@ -384,6 +384,8 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('/get-my-educations' , 'getMyEducations');
 
         Route::post('/get-my-jobs' , 'getMyJobs');
+
+        Route::post('/get-my-links' , 'getMyLinks');
       });
     });
   });  

@@ -244,6 +244,22 @@ class User extends Authenticatable
     }
 
     /**
+     * Get user links
+     */
+    public function links()
+    {
+        return $this->hasMany(UserLink::class)->orderBy('sort_order', 'asc');
+    }
+
+    /**
+     * Get active user links
+     */
+    public function activeLinks()
+    {
+        return $this->hasMany(UserLink::class)->active();
+    }
+
+    /**
      * Terminate all sessions except current
      */
     public function terminateOtherSessions($currentSessionToken = null)

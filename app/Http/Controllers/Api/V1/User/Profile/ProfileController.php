@@ -10,6 +10,7 @@ use App\Models\Post;
 use App\Models\Friendship;
 use App\Models\UserEducation;
 use App\Models\UserJob;
+use App\Models\UserLink;
 use Illuminate\Validation\ValidationException;
 use Exception;
 
@@ -39,6 +40,7 @@ class ProfileController extends Controller
             ];
         });
     }
+    
     private function mapJobDetails($jobs)
     {
         return $jobs->map(function ($job) {
@@ -64,6 +66,27 @@ class ProfileController extends Controller
                 'sort_order' => $job->sort_order,
                 'created_at' => $job->created_at,
                 'updated_at' => $job->updated_at
+            ];
+        });
+    }
+
+    private function mapLinkDetails($links)
+    {
+        return $links->map(function ($link) {
+            return [
+                'id' => $link->id,
+                'link_type' => $link->link_type,
+                'link_type_display' => $link->link_type_display,
+                'link_url' => $link->link_url,
+                'title' => $link->title,
+                'description' => $link->description,
+                'is_active' => $link->is_active,
+                'sort_order' => $link->sort_order,
+                'link_icon' => $link->link_icon,
+                'domain' => $link->domain,
+                'is_valid_url' => $link->is_valid_url,
+                'created_at' => $link->created_at,
+                'updated_at' => $link->updated_at
             ];
         });
     }
@@ -397,5 +420,134 @@ class ProfileController extends Controller
         }
     }
 
-   
+    public function getMyLinks(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'sort_by' => 'nullable|string|in:link_type,title,created_at',
+                'sort_order' => 'nullable|string|in:asc,desc',
+                'link_type' => 'nullable|string|in:website,portfolio,blog,linkedin,twitter,facebook,instagram,youtube,tiktok,github,behance,dribbble,pinterest,snapchat,telegram,whatsapp,other,all',
+                'status' => 'nullable|string|in:active,inactive,all'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $sortBy = $validatedData['sort_by'] ?? 'created_at';
+            $sortOrder = $validatedData['sort_order'] ?? 'desc';
+            $linkTypeFilter = $validatedData['link_type'] ?? 'all';
+            $statusFilter = $validatedData['status'] ?? 'all';
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Build query
+            $query = UserLink::where('user_id', $user->id);
+
+            // Apply link type filter
+            if ($linkTypeFilter !== 'all') {
+                $query->where('link_type', $linkTypeFilter);
+            }
+
+            // Apply status filter
+            if ($statusFilter === 'active') {
+                $query->where('is_active', true);
+            } elseif ($statusFilter === 'inactive') {
+                $query->where('is_active', false);
+            }
+
+            // Apply sorting
+            if ($sortBy === 'link_type') {
+                $query->orderBy('link_type', $sortOrder);
+            } elseif ($sortBy === 'title') {
+                $query->orderBy('title', $sortOrder);
+            } else {
+                $query->orderBy('created_at', $sortOrder);
+            }
+
+            // Get links with pagination
+            $links = $query->paginate($perPage);
+
+            if ($links->isEmpty()) {
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No links found',
+                    'data' => [
+                        'links' => [],
+                        'total_links' => 0,
+                        'current_filters' => [
+                            'link_type' => $linkTypeFilter,
+                            'status' => $statusFilter
+                        ],
+                        'sorting' => [
+                            'sort_by' => $sortBy,
+                            'sort_order' => $sortOrder
+                        ],
+                        'pagination' => [
+                            'current_page' => $links->currentPage(),
+                            'last_page' => $links->lastPage(),
+                            'per_page' => $links->perPage(),
+                            'total' => $links->total(),
+                            'from' => $links->firstItem(),
+                            'to' => $links->lastItem(),
+                            'has_more_pages' => $links->hasMorePages()
+                        ]
+                    ]
+                ], 200);
+            }
+
+            // Map links data with additional computed attributes
+            $mappedLinks = $this->mapLinkDetails($links->getCollection());
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'My links fetched successfully',
+                'data' => [
+                    'links' => $mappedLinks,
+                    'total_links' => $links->total(),
+                    'current_filters' => [
+                        'link_type' => $linkTypeFilter,
+                        'status' => $statusFilter
+                    ],
+                    'sorting' => [
+                        'sort_by' => $sortBy,
+                        'sort_order' => $sortOrder
+                    ],
+                    'pagination' => [
+                        'current_page' => $links->currentPage(),
+                        'last_page' => $links->lastPage(),
+                        'per_page' => $links->perPage(),
+                        'total' => $links->total(),
+                        'from' => $links->firstItem(),
+                        'to' => $links->lastItem(),
+                        'has_more_pages' => $links->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to fetch links',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 }
