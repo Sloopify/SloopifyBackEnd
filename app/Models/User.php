@@ -260,6 +260,27 @@ class User extends Authenticatable
     }
 
     /**
+     * Get user skills
+     */
+    public function skills()
+    {
+        return $this->belongsToMany(Skill::class, 'user_skills')
+                    ->withPivot('proficiency_level', 'description', 'is_public')
+                    ->withTimestamps();
+    }
+
+    /**
+     * Get public user skills
+     */
+    public function publicSkills()
+    {
+        return $this->belongsToMany(Skill::class, 'user_skills')
+                    ->wherePivot('is_public', true)
+                    ->withPivot('proficiency_level', 'description', 'is_public')
+                    ->withTimestamps();
+    }
+
+    /**
      * Terminate all sessions except current
      */
     public function terminateOtherSessions($currentSessionToken = null)
