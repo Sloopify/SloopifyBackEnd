@@ -11,6 +11,7 @@ use App\Models\Friendship;
 use App\Models\UserEducation;
 use App\Models\UserJob;
 use App\Models\UserLink;
+use App\Models\Skill;
 use Illuminate\Validation\ValidationException;
 use Exception;
 
@@ -89,6 +90,36 @@ class ProfileController extends Controller
                 'updated_at' => $link->updated_at
             ];
         });
+    }
+
+    private function mapSkillDetails($skills)
+    {
+        return $skills->map(function ($skill) {
+            return [
+                'id' => $skill->id,
+                'skill_name' => $skill->name,
+                'category' => $skill->category,
+                'proficiency_level' => $skill->pivot->proficiency_level,
+                'proficiency_display' => $this->getProficiencyDisplay($skill->pivot->proficiency_level),
+                'description' => $skill->pivot->description,
+                'is_public' => $skill->pivot->is_public,
+                'created_at' => $skill->pivot->created_at,
+                'updated_at' => $skill->pivot->updated_at
+            ];
+        });
+    }
+
+    private function getProficiencyDisplay($level)
+    {
+        $levels = [
+            1 => 'Beginner',
+            2 => 'Elementary',
+            3 => 'Intermediate',
+            4 => 'Advanced',
+            5 => 'Expert'
+        ];
+
+        return $levels[$level] ?? 'Unknown';
     }
 
     public function getMyInfo(Request $request)
@@ -549,5 +580,147 @@ class ProfileController extends Controller
             ], 500);
         }
     }
+
+    public function getMySkills(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'sort_by' => 'nullable|string|in:skill_name,category,proficiency_level,created_at',
+                'sort_order' => 'nullable|string|in:asc,desc',
+                'category' => 'nullable|string|in:Technology & Digital,Creative & Arts,Business & Finance,Lifestyle & Personal Growth,Science & Education,Social & Community,Gaming & Entertainment,all',
+                'proficiency_level' => 'nullable|integer|in:1,2,3,4,5',
+                'visibility' => 'nullable|string|in:public,private,all'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $sortBy = $validatedData['sort_by'] ?? 'created_at';
+            $sortOrder = $validatedData['sort_order'] ?? 'desc';
+            $categoryFilter = $validatedData['category'] ?? 'all';
+            $proficiencyFilter = $validatedData['proficiency_level'] ?? null;
+            $visibilityFilter = $validatedData['visibility'] ?? 'all';
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Build query using the skills relationship
+            $query = $user->skills();
+
+            // Apply category filter
+            if ($categoryFilter !== 'all') {
+                $query->where('skills.category', $categoryFilter);
+            }
+
+            // Apply proficiency level filter
+            if ($proficiencyFilter) {
+                $query->wherePivot('proficiency_level', $proficiencyFilter);
+            }
+
+            // Apply visibility filter
+            if ($visibilityFilter === 'public') {
+                $query->wherePivot('is_public', true);
+            } elseif ($visibilityFilter === 'private') {
+                $query->wherePivot('is_public', false);
+            }
+
+            // Apply sorting
+            if ($sortBy === 'skill_name') {
+                $query->orderBy('skills.name', $sortOrder);
+            } elseif ($sortBy === 'category') {
+                $query->orderBy('skills.category', $sortOrder);
+            } elseif ($sortBy === 'proficiency_level') {
+                $query->orderBy('user_skills.proficiency_level', $sortOrder);
+            } else {
+                $query->orderBy('user_skills.created_at', $sortOrder);
+            }
+
+            // Get skills with pagination
+            $skills = $query->paginate($perPage);
+
+            if ($skills->isEmpty()) {
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No skills found',
+                    'data' => [
+                        'skills' => [],
+                        'total_skills' => 0,
+                        'current_filters' => [
+                            'category' => $categoryFilter,
+                            'proficiency_level' => $proficiencyFilter,
+                            'visibility' => $visibilityFilter
+                        ],
+                        'sorting' => [
+                            'sort_by' => $sortBy,
+                            'sort_order' => $sortOrder
+                        ],
+                        'pagination' => [
+                            'current_page' => $skills->currentPage(),
+                            'last_page' => $skills->lastPage(),
+                            'per_page' => $skills->perPage(),
+                            'total' => $skills->total(),
+                            'from' => $skills->firstItem(),
+                            'to' => $skills->lastItem(),
+                            'has_more_pages' => $skills->hasMorePages()
+                        ]
+                    ]
+                ], 200);
+            }
+
+            // Map skills data with additional computed attributes
+            $mappedSkills = $this->mapSkillDetails($skills->getCollection());
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'My skills fetched successfully',
+                'data' => [
+                    'skills' => $mappedSkills,
+                    'total_skills' => $skills->total(),
+                    'current_filters' => [
+                        'category' => $categoryFilter,
+                        'proficiency_level' => $proficiencyFilter,
+                        'visibility' => $visibilityFilter
+                    ],
+                    'sorting' => [
+                        'sort_by' => $sortBy,
+                        'sort_order' => $sortOrder
+                    ],
+                    'pagination' => [
+                        'current_page' => $skills->currentPage(),
+                        'last_page' => $skills->lastPage(),
+                        'per_page' => $skills->perPage(),
+                        'total' => $skills->total(),
+                        'from' => $skills->firstItem(),
+                        'to' => $skills->lastItem(),
+                        'has_more_pages' => $skills->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to fetch skills',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+   
 
 }
