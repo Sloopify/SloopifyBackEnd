@@ -196,6 +196,30 @@ class User extends Authenticatable
     }
 
     /**
+     * Get user education records
+     */
+    public function educations()
+    {
+        return $this->hasMany(UserEducation::class)->orderBy('sort_order', 'asc');
+    }
+
+    /**
+     * Get current education
+     */
+    public function currentEducation()
+    {
+        return $this->hasMany(UserEducation::class)->current();
+    }
+
+    /**
+     * Get completed education
+     */
+    public function completedEducation()
+    {
+        return $this->hasMany(UserEducation::class)->completed();
+    }
+
+    /**
      * Terminate all sessions except current
      */
     public function terminateOtherSessions($currentSessionToken = null)

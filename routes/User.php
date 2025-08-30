@@ -373,12 +373,15 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       Route::group(['controller' => ProfileController::class], function () {
 
+        //======================================= My Profile ===============================
+        
         Route::post('/get-my-info' , 'getMyInfo');
 
         Route::post('/get-total-posts' , 'getTotalPosts');
 
         Route::post('/get-total-friends' , 'getTotalFriends');
 
+        Route::post('/get-my-educations' , 'getMyEducations');
       });
     });
   });  
