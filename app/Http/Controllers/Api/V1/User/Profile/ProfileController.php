@@ -12,6 +12,11 @@ use App\Models\UserEducation;
 use App\Models\UserJob;
 use App\Models\UserLink;
 use App\Models\Skill;
+use App\Models\PostReaction;
+use App\Models\Reaction;
+use App\Models\User;
+use App\Models\UserPlace;
+use App\Http\Controllers\Api\V1\User\Home\HomeController;
 use Illuminate\Validation\ValidationException;
 use Exception;
 
@@ -721,6 +726,308 @@ class ProfileController extends Controller
             ], 500);
         }
     }
-   
 
+    public function getMyPosts(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:50'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $page = $validated['page'] ?? 1;
+            $perPage = $validated['per_page'] ?? 20;
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Gather friend ids
+            $friendships = Friendship::where(function($q) use ($user) {
+                    $q->where('user_id', $user->id)
+                      ->orWhere('friend_id', $user->id);
+                })
+                ->where('status', 'accepted')
+                ->get();
+
+            $friendIds = $friendships->map(function($f) use ($user) {
+                return $f->user_id == $user->id ? $f->friend_id : $f->user_id;
+            })->unique()->values();
+
+            // Base query for posts visible to current user
+            $visiblePostsQuery = Post::with(['user', 'media', 'poll', 'personalOccasion'])
+                ->approved()
+                ->notExpired()
+                ->visibleTo($user->id);
+
+            // 1) Direct friends' posts
+            $friendsPosts = (clone $visiblePostsQuery)
+                ->whereIn('user_id', $friendIds)
+                ->inRandomOrder()
+                ->take($perPage * 2)
+                ->get();
+
+            // 2) Posts friends interacted with (commented on or interest feedback)
+            $friendInteractedPostIds = collect();
+            if ($friendIds->isNotEmpty()) {
+                $commented = \DB::table('post_comments')
+                    ->whereIn('user_id', $friendIds)
+                    ->pluck('post_id');
+                $interested = \DB::table('post_interest_feedback')
+                    ->whereIn('user_id', $friendIds)
+                    ->pluck('post_id');
+                $friendInteractedPostIds = $commented->merge($interested)->unique()->values();
+            }
+
+            $friendInteractedPosts = $friendInteractedPostIds->isEmpty()
+                ? collect()
+                : (clone $visiblePostsQuery)
+                    ->whereIn('id', $friendInteractedPostIds)
+                    ->inRandomOrder()
+                    ->take($perPage)
+                    ->get();
+
+            // 3) Personalized suggested posts (interests + demographics)
+            $userInterests = $user->userInterests()->pluck('interests.id');
+            $gender = $user->gender;
+            $age = $user->age;
+
+            $suggestedQuery = (clone $visiblePostsQuery)
+                ->whereNotIn('user_id', $friendIds->push($user->id))
+                ->where('privacy', 'public');
+
+            // Boost posts by users with overlapping interests
+            if ($userInterests->isNotEmpty()) {
+                $suggestedUserIdsByInterests = \DB::table('user_interests')
+                    ->whereIn('interest_id', $userInterests)
+                    ->where('user_id', '!=', $user->id)
+                    ->pluck('user_id');
+                $suggestedQuery->whereIn('user_id', $suggestedUserIdsByInterests);
+            }
+
+            // Light demographic alignment (optional filters if present)
+            $suggestedQuery->when(!empty($gender), function($q) use ($gender) {
+                $q->whereHas('user', function($uq) use ($gender) {
+                    $uq->where('gender', $gender);
+                });
+            });
+            $suggestedQuery->when(!empty($age), function($q) use ($age) {
+                $q->whereHas('user', function($uq) use ($age) {
+                    $uq->whereBetween('age', [max(13, $age - 5), $age + 5]);
+                });
+            });
+
+            $suggestedPosts = $suggestedQuery
+                ->inRandomOrder()
+                ->take($perPage)
+                ->get();
+
+            // 4) Posts similar to ones user marked interested/not interested (use positive ones)
+            $likedPostOwnerIds = \DB::table('post_interest_feedback')
+                ->where('user_id', $user->id)
+                ->where('interest_type', 'interested')
+                ->pluck('post_owner_id');
+
+            $similarPosts = $likedPostOwnerIds->isEmpty() ? collect() : (clone $visiblePostsQuery)
+                ->whereIn('user_id', $likedPostOwnerIds)
+                ->inRandomOrder()
+                ->take($perPage)
+                ->get();
+
+            // Merge pools and de-duplicate by id
+            $pool = $friendsPosts
+                ->merge($friendInteractedPosts)
+                ->merge($suggestedPosts)
+                ->merge($similarPosts)
+                ->unique('id')
+                ->values();
+
+            // Shuffle to keep it unordered and random per request
+            $pool = $pool->shuffle();
+
+            // Paginate manually from the shuffled pool
+            $total = $pool->count();
+            $offset = ($page - 1) * $perPage;
+            $slice = $pool->slice($offset, $perPage)->values();
+
+            // Enrich posts: comment_count, reaction_count, is_saved
+            $postIds = $slice->pluck('id');
+            $commentCounts = \DB::table('post_comments')
+                ->whereIn('post_id', $postIds)
+                ->whereNull('parent_comment_id')
+                ->where('is_deleted', false)
+                ->select('post_id', \DB::raw('count(*) as cnt'))
+                ->groupBy('post_id')
+                ->pluck('cnt', 'post_id');
+
+            // Use interest feedback on posts as proxy for reactions
+            $reactionCountsFriend = \DB::table('post_interest_feedback')
+                ->whereIn('post_id', $postIds)
+                ->select('post_id', \DB::raw('count(*) as cnt'))
+                ->groupBy('post_id')
+                ->pluck('cnt', 'post_id');
+            $reactionCountsSuggested = \DB::table('suggested_post_interest_feedback')
+                ->whereIn('post_id', $postIds)
+                ->select('post_id', \DB::raw('count(*) as cnt'))
+                ->groupBy('post_id')
+                ->pluck('cnt', 'post_id');
+
+            $savedPostIds = \DB::table('saved_posts')
+                ->where('user_id', $user->id)
+                ->whereIn('post_id', $postIds)
+                ->pluck('post_id')
+                ->flip();
+
+            // Get post reactions data with user details
+            $postReactions = PostReaction::whereIn('post_id', $postIds)
+                ->with(['reaction', 'user'])
+                ->get()
+                ->groupBy('post_id');
+
+            // Get user's reactions for these posts
+            $userReactions = PostReaction::where('user_id', $user->id)
+                ->whereIn('post_id', $postIds)
+                ->with('reaction')
+                ->get()
+                ->keyBy('post_id');
+
+            $mapped = $slice->map(function($post) use ($commentCounts, $reactionCountsFriend, $reactionCountsSuggested, $savedPostIds, $friendIds, $postReactions, $userReactions) {
+                $data = $post->toArray();
+                $data['comments_count'] = (int) ($commentCounts[$post->id] ?? 0);
+                
+                // Get post reactions data for this post
+                $postReactionData = $postReactions->get($post->id, collect());
+                $totalPostReactions = $postReactionData->count();
+                
+                // Use new post reactions count instead of old interest feedback
+                $data['reactions_count'] = $totalPostReactions;
+                
+                $data['is_saved'] = $savedPostIds->has($post->id);
+                $data['is_user_friend'] = $friendIds->contains($post->user_id);
+                
+                // Map user data using mapUsersDetails function
+                $data['user'] = $this->mapUsersDetails(collect([$post->user]))->first();
+                
+                // Map mentions friends to full user data
+                if (isset($data['mentions']['friends']) && !empty($data['mentions']['friends'])) {
+                    $mentionedUserIds = $data['mentions']['friends'];
+                    $mentionedUsers = User::whereIn('id', $mentionedUserIds)->get();
+                    $data['mentions']['friends'] = $this->mapUsersDetails($mentionedUsers);
+                }
+                
+                // Map mentions place to full place data
+                if (isset($data['mentions']['place']) && !empty($data['mentions']['place'])) {
+                    $userPlace = UserPlace::find($data['mentions']['place']);
+                    if ($userPlace) {
+                        $data['mentions']['place'] = $this->mapUserPlaces($userPlace);
+                    }
+                }
+                
+                // Check if mentions object is empty and set to null
+                if (isset($data['mentions']) && empty(array_filter($data['mentions']))) {
+                    $data['mentions'] = null;
+                }
+
+                // Add post reactions data
+                $userReactionData = $userReactions->get($post->id);
+
+                // Group reactions by type and count them
+                $reactionCounts = $postReactionData->groupBy('reaction_id')
+                    ->map(function ($reactions) {
+                        return [
+                            'reaction' => $reactions->first()->reaction,
+                            'count' => $reactions->count(),
+                            'users' => $reactions->pluck('user')
+                        ];
+                    });
+
+                $data['post_reactions'] = [
+                    'user_reaction' => $userReactionData ? [
+                        'id' => $userReactionData->reaction->id,
+                        'name' => $userReactionData->reaction->name,
+                        'content' => $userReactionData->reaction->content,
+                        'image' => $this->formatReactionUrl($userReactionData->reaction->image_url),
+                        'video' => $this->formatReactionUrl($userReactionData->reaction->video_url)
+                    ] : null,
+                    'reactions' => $reactionCounts->map(function ($item) {
+                        return [
+                            'id' => $item['reaction']->id,
+                            'name' => $item['reaction']->name,
+                            'content' => $item['reaction']->content,
+                            'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                            'video' => $this->formatReactionUrl($item['reaction']->video_url),
+                            'count' => $item['count'],
+                            'users' => $this->mapUsersDetails($item['users'])
+                        ];
+                    })->values(),
+                    'total_reactions' => $totalPostReactions
+                ];
+                
+                // Date fields already present: created_at, updated_at
+                return $data;
+            });
+
+            // Get reactions data from HomeController
+            $homeController = app(HomeController::class);
+            $reactionsRequest = new Request();
+            $reactionsResponse = $homeController->getReactions($reactionsRequest);
+            $reactionsData = json_decode($reactionsResponse->getContent(), true);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'My feed retrieved successfully',
+                'data' => [
+                    'posts' => $mapped,
+                    'reactions' => $reactionsData['success'] ? $reactionsData['data'] : [],
+                    'pagination' => [
+                        'current_page' => $page,
+                        'per_page' => $perPage,
+                        'total' => $total,
+                        'last_page' => $total > 0 ? (int)ceil($total / $perPage) : 1,
+                        'from' => $total ? $offset + 1 : null,
+                        'to' => $total ? min($offset + $perPage, $total) : null,
+                        'has_more_pages' => $offset + $perPage < $total
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve feed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function mapUsersDetails($users)
+    {
+        return $users->map(function ($user) {
+            return app(\App\Http\Controllers\Api\V1\User\Auth\AuthController::class)->mapUserDetails($user);
+        });
+    }
+    
+    public function mapUserPlaces($userPlace)
+    {
+        return app(\App\Http\Controllers\Api\V1\User\Post\PostController::class)->mapUserPlaces($userPlace);
+    }
+
+    private function formatReactionUrl($url)
+    {
+        return app(\App\Http\Controllers\Api\V1\User\Post\PostController::class)->formatReactionUrl($url);
+    }
 }
