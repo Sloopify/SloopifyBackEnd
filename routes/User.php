@@ -395,6 +395,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/get-my-videos-from-posts' , 'getMyVideosFromPosts');
 
+        Route::post('get-my-interests' , 'getMyInterests');
+
       });
     });
   });  
