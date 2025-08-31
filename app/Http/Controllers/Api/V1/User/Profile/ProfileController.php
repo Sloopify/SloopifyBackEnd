@@ -1030,4 +1030,241 @@ class ProfileController extends Controller
     {
         return app(\App\Http\Controllers\Api\V1\User\Post\PostController::class)->formatReactionUrl($url);
     }
+
+    public function getMyImagesFromPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Get posts that have images (type = image or have media with type = image)
+            $postsWithImages = Post::with(['media'])
+                ->where('user_id', $user->id)
+                ->where(function($query) {
+                    $query->where('type', 'image')
+                          ->orWhereHas('media', function($mediaQuery) {
+                              $mediaQuery->where('type', 'image');
+                          });
+                })
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage);
+
+            if ($postsWithImages->isEmpty()) {
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No images found in your posts',
+                    'data' => [
+                        'images' => [],
+                        'total_images' => 0,
+                        'pagination' => [
+                            'current_page' => $postsWithImages->currentPage(),
+                            'per_page' => $postsWithImages->perPage(),
+                            'total' => $postsWithImages->total(),
+                            'last_page' => $postsWithImages->lastPage(),
+                            'from' => $postsWithImages->firstItem(),
+                            'to' => $postsWithImages->lastItem(),
+                            'has_more_pages' => $postsWithImages->hasMorePages()
+                        ]
+                    ]
+                ], 200);
+            }
+
+            // Map posts to extract only image data
+            $mappedImages = $postsWithImages->getCollection()->map(function ($post) {
+                // Filter only image media
+                $imageMedia = $post->media->filter(function ($media) {
+                    return $media->type === 'image';
+                })->map(function ($media) {
+                    return [
+                        'id' => $media->id,
+                        'type' => $media->type,
+                        'url' => $media->url,
+                        'thumbnail_url' => $media->thumbnail_url,
+                        'file_size' => $media->file_size,
+                        'width' => $media->width,
+                        'height' => $media->height,
+                        'metadata' => $media->metadata
+                    ];
+                })->values();
+
+                return [
+                    'post_id' => $post->id,
+                    'post_content' => $post->content,
+                    'post_type' => $post->type,
+                    'images' => $imageMedia,
+                    'created_at' => $post->created_at
+                ];
+            })->filter(function ($post) {
+                // Only include posts that actually have images
+                return $post['images']->isNotEmpty();
+            })->values();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Images from my posts fetched successfully',
+                'data' => [
+                    'images' => $mappedImages,
+                    'total_images' => $postsWithImages->total(),
+                    'pagination' => [
+                        'current_page' => $postsWithImages->currentPage(),
+                        'per_page' => $postsWithImages->perPage(),
+                        'total' => $postsWithImages->total(),
+                        'last_page' => $postsWithImages->lastPage(),
+                        'from' => $postsWithImages->firstItem(),
+                        'to' => $postsWithImages->lastItem(),
+                        'has_more_pages' => $postsWithImages->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to fetch images from posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getMyVideosFromPosts(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Get posts that have videos (type = video or have media with type = video)
+            $postsWithVideos = Post::with(['media'])
+                ->where('user_id', $user->id)
+                ->where(function($query) {
+                    $query->where('type', 'video')
+                          ->orWhereHas('media', function($mediaQuery) {
+                              $mediaQuery->where('type', 'video');
+                          });
+                })
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage);
+
+            if ($postsWithVideos->isEmpty()) {
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No videos found in your posts',
+                    'data' => [
+                        'videos' => [],
+                        'total_videos' => 0,
+                        'pagination' => [
+                            'current_page' => $postsWithVideos->currentPage(),
+                            'per_page' => $postsWithVideos->perPage(),
+                            'total' => $postsWithVideos->total(),
+                            'last_page' => $postsWithVideos->lastPage(),
+                            'from' => $postsWithVideos->firstItem(),
+                            'to' => $postsWithVideos->lastItem(),
+                            'has_more_pages' => $postsWithVideos->hasMorePages()
+                        ]
+                    ]
+                ], 200);
+            }
+
+            // Map posts to extract only video data
+            $mappedVideos = $postsWithVideos->getCollection()->map(function ($post) {
+                // Filter only video media
+                $videoMedia = $post->media->filter(function ($media) {
+                    return $media->type === 'video';
+                })->map(function ($media) {
+                    return [
+                        'id' => $media->id,
+                        'type' => $media->type,
+                        'url' => $media->url,
+                        'thumbnail_url' => $media->thumbnail_url,
+                        'file_size' => $media->file_size,
+                        'width' => $media->width,
+                        'height' => $media->height,
+                        'duration' => $media->duration,
+                        'metadata' => $media->metadata
+                    ];
+                })->values();
+
+                return [
+                    'post_id' => $post->id,
+                    'post_content' => $post->content,
+                    'post_type' => $post->type,
+                    'videos' => $videoMedia,
+                    'created_at' => $post->created_at
+                ];
+            })->filter(function ($post) {
+                // Only include posts that actually have videos
+                return $post['videos']->isNotEmpty();
+            })->values();
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Videos from my posts fetched successfully',
+                'data' => [
+                    'videos' => $mappedVideos,
+                    'total_videos' => $postsWithVideos->total(),
+                    'pagination' => [
+                        'current_page' => $postsWithVideos->currentPage(),
+                        'per_page' => $postsWithVideos->perPage(),
+                        'total' => $postsWithVideos->total(),
+                        'last_page' => $postsWithVideos->lastPage(),
+                        'from' => $postsWithVideos->firstItem(),
+                        'to' => $postsWithVideos->lastItem(),
+                        'has_more_pages' => $postsWithVideos->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to fetch videos from posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
