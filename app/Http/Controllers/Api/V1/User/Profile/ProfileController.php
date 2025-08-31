@@ -16,6 +16,7 @@ use App\Models\PostReaction;
 use App\Models\Reaction;
 use App\Models\User;
 use App\Models\UserPlace;
+use App\Models\Interest;
 use App\Http\Controllers\Api\V1\User\Home\HomeController;
 use Illuminate\Validation\ValidationException;
 use Exception;
@@ -125,6 +126,33 @@ class ProfileController extends Controller
         ];
 
         return $levels[$level] ?? 'Unknown';
+    }
+
+    private function mapInterests($interests)
+    {
+        // Convert array to collection if needed
+        if (is_array($interests)) {
+            $interests = collect($interests);
+        }
+        
+        $groupedInterests = $interests->groupBy('category');
+        
+        return $groupedInterests->map(function ($categoryInterests, $categoryName) { 
+            return [
+                'category' => $categoryName,
+                'interests' => $categoryInterests->map(function ($interest) {
+                    return [
+                        'id' => $interest->id,
+                        'name' => $interest->name,
+                        'web_icon' => $interest->web_icon ? config('app.url') . asset('storage/' . $interest->web_icon) : null,
+                        'mobile_icon' => $interest->mobile_icon ? config('app.url') . asset('storage/' . $interest->mobile_icon) : null,
+                        'status' => $interest->status,
+                        'created_at' => $interest->created_at,
+                        'updated_at' => $interest->updated_at,
+                    ];
+                })->values()
+            ];
+        })->values();
     }
 
     public function getMyInfo(Request $request)
@@ -1263,6 +1291,113 @@ class ProfileController extends Controller
                 'status_code' => 500,
                 'success' => false,
                 'message' => 'Failed to fetch videos from posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getMyInterests(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'category' => 'nullable|string|in:all',
+                'status' => 'nullable|string|in:active,inactive,all'
+            ]);
+
+            $user = Auth::guard('user')->user();
+            $perPage = $validatedData['per_page'] ?? 20;
+            $categoryFilter = $validatedData['category'] ?? 'all';
+            $statusFilter = $validatedData['status'] ?? 'all';
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Build query using the interests relationship
+            $query = $user->userInterests();
+
+            // Apply category filter
+            if ($categoryFilter && $categoryFilter !== 'all') {
+                $query->where('interests.category', $categoryFilter);
+            }
+
+            // Apply status filter
+            if ($statusFilter !== 'all') {
+                $query->where('interests.status', $statusFilter);
+            }
+
+            // Get interests with pagination
+            $interests = $query->paginate($perPage);
+
+            if ($interests->isEmpty()) {
+                return response()->json([
+                    'status_code' => 200,
+                    'success' => true,
+                    'message' => 'No interests found',
+                    'data' => [
+                        'interests' => [],
+                        'total_interests' => 0,
+                        'current_filters' => [
+                            'category' => $categoryFilter,
+                            'status' => $statusFilter
+                        ],
+                        'pagination' => [
+                            'current_page' => $interests->currentPage(),
+                            'per_page' => $interests->perPage(),
+                            'total' => $interests->total(),
+                            'last_page' => $interests->lastPage(),
+                            'from' => $interests->firstItem(),
+                            'to' => $interests->lastItem(),
+                            'has_more_pages' => $interests->hasMorePages()
+                        ]
+                    ]
+                ], 200);
+            }
+
+            // Map interests data with grouping by category
+            $mappedInterests = $this->mapInterests($interests->getCollection());
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'My interests fetched successfully',
+                'data' => [
+                    'interests' => $mappedInterests,
+                    'total_interests' => $interests->total(),
+                    'current_filters' => [
+                        'category' => $categoryFilter,
+                        'status' => $statusFilter
+                    ],
+                    'pagination' => [
+                        'current_page' => $interests->currentPage(),
+                        'per_page' => $interests->perPage(),
+                        'total' => $interests->total(),
+                        'last_page' => $interests->lastPage(),
+                        'from' => $interests->firstItem(),
+                        'to' => $interests->lastItem(),
+                        'has_more_pages' => $interests->hasMorePages()
+                    ]
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to fetch interests',
                 'error' => $e->getMessage()
             ], 500);
         }
