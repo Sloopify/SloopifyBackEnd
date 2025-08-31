@@ -315,6 +315,8 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('/decline-friend-request' , 'declineFriendRequest');
 
         Route::post('/send-request' , 'sendFriendRequest');
+
+        Route::post('/get-people-you-may-know' , 'getPeopleYouMayKnow');
         
       });
     });
