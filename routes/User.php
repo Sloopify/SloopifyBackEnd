@@ -389,6 +389,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
         Route::post('/get-my-skills' , 'getMySkills');
 
+        Route::post('/get-my-posts' , 'getMyPosts');
+
       });
     });
   });  
