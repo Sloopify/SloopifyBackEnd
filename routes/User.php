@@ -36,6 +36,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       Route::post('/logout', 'logout')->middleware('user.auth');
 
+      Route::post('/get-default-images' , 'getDefaultImages');
+
 
      //=================================== User Forget password =============================
 
@@ -315,6 +317,8 @@ Route::group(['prefix' => 'api/v1'], function () {
         Route::post('/decline-friend-request' , 'declineFriendRequest');
 
         Route::post('/send-request' , 'sendFriendRequest');
+
+        Route::post('/get-people-you-may-know' , 'getPeopleYouMayKnow');
         
       });
     });

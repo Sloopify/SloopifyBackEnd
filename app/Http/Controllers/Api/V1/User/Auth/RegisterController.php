@@ -584,7 +584,7 @@ class RegisterController extends Controller
     {
         try{
         $validatedData = $request->validate([
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ]);
 
         $user = Auth::guard('user')->user();
@@ -596,11 +596,24 @@ class RegisterController extends Controller
             ], 404);
         }
 
-        $image = $request->file('image')->getClientOriginalName();
-        $userImagePath = 'UserImage/' . $user->id;
-        $path = $request->file('image')->storeAs($userImagePath, $image, 'public');
+        if ($request->hasFile('image')) {
+            // User uploaded an image
+            $image = $request->file('image')->getClientOriginalName();
+            $userImagePath = 'UserImage/' . $user->id;
+            $path = $request->file('image')->storeAs($userImagePath, $image, 'public');
+            $user->img = $path;
+        } else {
+            // No image uploaded, use default image based on gender
+            if ($user->gender === 'male') {
+                $user->img = 'DefaultUserImage/Men/men.png';
+            } elseif ($user->gender === 'female') {
+                $user->img = 'DefaultUserImage/Women/women.png';
+            } else {
+                // Default to men image if gender is not specified
+                $user->img = 'DefaultUserImage/Men/men.png';
+            }
+        }
 
-        $user->img = $path;
         $user->save();
         return response()->json([
             'status_code' => 200,

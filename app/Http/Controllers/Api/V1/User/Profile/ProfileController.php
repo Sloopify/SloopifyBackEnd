@@ -1402,4 +1402,136 @@ class ProfileController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Update user profile image
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     * 
+     * @example
+     * POST /api/v1/user/profile/update-image
+     * Content-Type: multipart/form-data
+     * 
+     * {
+     *   "image": "file_upload"
+     * }
+     * 
+     * @response 200 {
+     *   "status_code": 200,
+     *   "success": true,
+     *   "message": "Profile image updated successfully",
+     *   "data": {
+     *     "user": {
+     *       "id": 1,
+     *       "first_name": "John",
+     *       "last_name": "Doe",
+     *       "user_name": "john_doe_123",
+     *       "image": "https://example.com/storage/UserImage/1/profile.jpg",
+     *       "cover_photo": null,
+     *       "gender": "male",
+     *       "age": 25,
+     *       "bio": "Software Developer",
+     *       "country": "USA",
+     *       "city": "New York",
+     *       "phone": {
+     *         "full": "+1234567890",
+     *         "code": "+1",
+     *         "number": "234567890",
+     *         "valid": true
+     *       },
+     *       "email": "john@example.com",
+     *       "email_verified": true,
+     *       "status": "active",
+     *       "is_blocked": false,
+     *       "provider": "email",
+     *       "referral_code": "ABC123",
+     *       "referral_link": null,
+     *       "reffered_by": null,
+     *       "last_login_at": "2025-01-01T12:00:00.000000Z",
+     *       "created_at": "2025-01-01T00:00:00.000000Z",
+     *       "updated_at": "2025-01-01T12:00:00.000000Z"
+     *     }
+     *   }
+     * }
+     * 
+     * @response 404 {
+     *   "status_code": 404,
+     *   "success": false,
+     *   "message": "User not found"
+     * }
+     * 
+     * @response 422 {
+     *   "status_code": 422,
+     *   "success": false,
+     *   "message": "Validation failed",
+     *   "errors": {
+     *     "image": ["The image field is required."]
+     *   }
+     * }
+     * 
+     * @response 500 {
+     *   "status_code": 500,
+     *   "success": false,
+     *   "message": "Failed to update profile image",
+     *   "error": "Error message"
+     * }
+     */
+    public function updateImage(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            ]);
+
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'status_code' => 404,
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Generate unique filename
+            $image = $request->file('image');
+            $imageName = time() . '_' . $user->id . '.' . $image->getClientOriginalExtension();
+            $userImagePath = 'UserImage/' . $user->id;
+            
+            // Store the image
+            $path = $image->storeAs($userImagePath, $imageName, 'public');
+
+            // Update user's image
+            $user->img = $path;
+            $user->save();
+
+            // Get updated user details
+            $userDetails = app(AuthController::class)->mapUserDetails($user);
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Profile image updated successfully',
+                'data' => [
+                    'user' => $userDetails
+                ]
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status_code' => 422,
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to update profile image',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

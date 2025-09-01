@@ -8,6 +8,11 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Friendship;
+use App\Models\Interest;
+use App\Models\UserEducation;
+use App\Models\UserJob;
+use App\Models\Skill;
+use App\Models\PostReaction;
 use Illuminate\Validation\ValidationException;
 use Exception;
 use App\Http\Controllers\Api\V1\User\Auth\AuthController;
@@ -1569,6 +1574,297 @@ class FriendController extends Controller
                  'status_code' => 500,
                  'success' => false,
                  'message' => 'Failed to send friend request',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
+
+     public function getPeopleYouMayKnow(Request $request)
+     {
+         try {
+             $validatedData = $request->validate([
+                 'page' => 'nullable|integer|min:1',
+                 'per_page' => 'nullable|integer|min:1|max:100',
+                 'sort_by' => 'nullable|string|in:relevance,name,age',
+                 'sort_order' => 'nullable|string|in:asc,desc'
+             ]);
+
+             $user = Auth::guard('user')->user();
+             $perPage = $validatedData['per_page'] ?? 20;
+             $sortBy = $validatedData['sort_by'] ?? 'relevance';
+             $sortOrder = $validatedData['sort_order'] ?? 'desc';
+
+             if (!$user) {
+                 return response()->json([
+                     'status_code' => 404,
+                     'success' => false,
+                     'message' => 'User not found'
+                 ], 404);
+             }
+
+             // Get current user's friends
+             $userFriends = Friendship::where(function($query) use ($user) {
+                 $query->where('user_id', $user->id)
+                       ->orWhere('friend_id', $user->id);
+             })
+             ->where('status', 'accepted')
+             ->get()
+             ->map(function($friendship) use ($user) {
+                 return $friendship->user_id == $user->id ? $friendship->friend_id : $friendship->user_id;
+             })
+             ->unique()
+             ->values();
+
+             // Get users who are not friends with current user
+             $query = User::where('id', '!=', $user->id)
+                 ->whereNotIn('id', $userFriends);
+
+             // 1. Mutual Friends - Get friends of friends
+             $friendsOfFriends = collect();
+             if ($userFriends->isNotEmpty()) {
+                 $friendsOfFriends = Friendship::where(function($query) use ($userFriends) {
+                     $query->whereIn('user_id', $userFriends)
+                           ->orWhereIn('friend_id', $userFriends);
+                 })
+                 ->where('status', 'accepted')
+                 ->get()
+                 ->map(function($friendship) use ($userFriends) {
+                     $friendId = in_array($friendship->user_id, $userFriends->toArray()) 
+                         ? $friendship->friend_id 
+                         : $friendship->user_id;
+                     return $friendId;
+                 })
+                 ->unique()
+                 ->values();
+             }
+
+             // 2. Shared Interests
+             $userInterests = $user->userInterests()->pluck('interests.id');
+             $usersWithSharedInterests = collect();
+             if ($userInterests->isNotEmpty()) {
+                 $usersWithSharedInterests = User::whereHas('userInterests', function($query) use ($userInterests) {
+                     $query->whereIn('interest_id', $userInterests);
+                 })
+                 ->where('id', '!=', $user->id)
+                 ->whereNotIn('id', $userFriends)
+                 ->pluck('id');
+             }
+
+             // 3. Same Age Group (±3 years)
+             $sameAgeUsers = collect();
+             if ($user->age) {
+                 $sameAgeUsers = User::whereBetween('age', [$user->age - 3, $user->age + 3])
+                     ->where('id', '!=', $user->id)
+                     ->whereNotIn('id', $userFriends)
+                     ->pluck('id');
+             }
+
+             // 4. Same Place of Work
+             $userJobs = UserJob::where('user_id', $user->id)
+                 ->whereNotNull('company_name')
+                 ->pluck('company_name');
+             $usersWithSameWorkplace = collect();
+             if ($userJobs->isNotEmpty()) {
+                 $usersWithSameWorkplace = User::whereHas('userJobs', function($query) use ($userJobs) {
+                     $query->whereIn('company_name', $userJobs);
+                 })
+                 ->where('id', '!=', $user->id)
+                 ->whereNotIn('id', $userFriends)
+                 ->pluck('id');
+             }
+
+             // 5. Same Place of Study
+             $userEducations = UserEducation::where('user_id', $user->id)
+                 ->whereNotNull('institution_name')
+                 ->pluck('institution_name');
+             $usersWithSameStudyPlace = collect();
+             if ($userEducations->isNotEmpty()) {
+                 $usersWithSameStudyPlace = User::whereHas('userEducations', function($query) use ($userEducations) {
+                     $query->whereIn('institution_name', $userEducations);
+                 })
+                 ->where('id', '!=', $user->id)
+                 ->whereNotIn('id', $userFriends)
+                 ->pluck('id');
+             }
+
+             // 6. Same Skills
+             $userSkills = $user->skills()->pluck('skills.id');
+             $usersWithSameSkills = collect();
+             if ($userSkills->isNotEmpty()) {
+                 $usersWithSameSkills = User::whereHas('skills', function($query) use ($userSkills) {
+                     $query->whereIn('skill_id', $userSkills);
+                 })
+                 ->where('id', '!=', $user->id)
+                 ->whereNotIn('id', $userFriends)
+                 ->pluck('id');
+             }
+
+             // 7. Users who reacted to posts that current user reacted to
+             $userReactions = PostReaction::where('user_id', $user->id)->pluck('post_id');
+             $usersWithSimilarReactions = collect();
+             if ($userReactions->isNotEmpty()) {
+                 $usersWithSimilarReactions = PostReaction::whereIn('post_id', $userReactions)
+                     ->where('user_id', '!=', $user->id)
+                     ->whereNotIn('user_id', $userFriends)
+                     ->pluck('user_id')
+                     ->unique();
+             }
+
+             // Combine all potential connections
+             $allPotentialUsers = $friendsOfFriends
+                 ->merge($usersWithSharedInterests)
+                 ->merge($sameAgeUsers)
+                 ->merge($usersWithSameWorkplace)
+                 ->merge($usersWithSameStudyPlace)
+                 ->merge($usersWithSameSkills)
+                 ->merge($usersWithSimilarReactions)
+                 ->unique()
+                 ->values();
+
+             if ($allPotentialUsers->isEmpty()) {
+                 return response()->json([
+                     'status_code' => 200,
+                     'success' => true,
+                     'message' => 'No people you may know found',
+                     'data' => [
+                         'people' => [],
+                         'total_people' => 0,
+                         'sorting' => [
+                             'sort_by' => $sortBy,
+                             'sort_order' => $sortOrder
+                         ],
+                         'pagination' => [
+                             'current_page' => 1,
+                             'per_page' => $perPage,
+                             'total' => 0,
+                             'last_page' => 1,
+                             'from' => null,
+                             'to' => null,
+                             'has_more_pages' => false
+                         ]
+                     ]
+                 ], 200);
+             }
+
+             // Get users with their connection reasons and scores
+             $usersWithConnections = User::whereIn('id', $allPotentialUsers)
+                 ->get()
+                 ->map(function($potentialUser) use ($user, $friendsOfFriends, $usersWithSharedInterests, $sameAgeUsers, $usersWithSameWorkplace, $usersWithSameStudyPlace, $usersWithSameSkills, $usersWithSimilarReactions) {
+                     
+                     $connectionReasons = [];
+                     $connectionScore = 0;
+
+                     // Check each connection type and calculate score
+                     if ($friendsOfFriends->contains($potentialUser->id)) {
+                         $connectionReasons[] = 'mutual_friends';
+                         $connectionScore += 30;
+                     }
+
+                     if ($usersWithSharedInterests->contains($potentialUser->id)) {
+                         $connectionReasons[] = 'shared_interests';
+                         $connectionScore += 25;
+                     }
+
+                     if ($sameAgeUsers->contains($potentialUser->id)) {
+                         $connectionReasons[] = 'same_age_group';
+                         $connectionScore += 15;
+                     }
+
+                     if ($usersWithSameWorkplace->contains($potentialUser->id)) {
+                         $connectionReasons[] = 'same_workplace';
+                         $connectionScore += 20;
+                     }
+
+                     if ($usersWithSameStudyPlace->contains($potentialUser->id)) {
+                         $connectionReasons[] = 'same_study_place';
+                         $connectionScore += 20;
+                     }
+
+                     if ($usersWithSameSkills->contains($potentialUser->id)) {
+                         $connectionReasons[] = 'shared_skills';
+                         $connectionScore += 15;
+                     }
+
+                     if ($usersWithSimilarReactions->contains($potentialUser->id)) {
+                         $connectionReasons[] = 'similar_reactions';
+                         $connectionScore += 10;
+                     }
+
+                     return [
+                         'user' => $potentialUser,
+                         'connection_reasons' => $connectionReasons,
+                         'connection_score' => $connectionScore
+                     ];
+                 });
+
+             // Sort by relevance (connection score) or other criteria
+             if ($sortBy === 'relevance') {
+                 $usersWithConnections = $sortOrder === 'desc' 
+                     ? $usersWithConnections->sortByDesc('connection_score')
+                     : $usersWithConnections->sortBy('connection_score');
+             } elseif ($sortBy === 'name') {
+                 $usersWithConnections = $sortOrder === 'desc'
+                     ? $usersWithConnections->sortByDesc('user.last_name')
+                     : $usersWithConnections->sortBy('user.last_name');
+             } elseif ($sortBy === 'age') {
+                 $usersWithConnections = $sortOrder === 'desc'
+                     ? $usersWithConnections->sortByDesc('user.age')
+                     : $usersWithConnections->sortBy('user.age');
+             }
+
+             // Paginate manually
+             $total = $usersWithConnections->count();
+             $offset = (($request->get('page', 1) - 1) * $perPage);
+             $paginatedUsers = $usersWithConnections->slice($offset, $perPage);
+
+             // Map users with complete details
+             $mappedPeople = $paginatedUsers->map(function ($item) use ($user) {
+                 $userDetails = $this->authController->mapUserDetails($item['user']);
+                 $userDetails = $this->addOnlineStatusToUserDetails($userDetails, $item['user']->id);
+                 $userDetails = $this->addMutualFriendsToUserDetails($userDetails, $user->id, $item['user']->id);
+                 
+                 // Add connection information
+                 $userDetails['connection_reasons'] = $item['connection_reasons'];
+                 $userDetails['connection_score'] = $item['connection_score'];
+
+                 return $userDetails;
+             });
+
+             return response()->json([
+                 'status_code' => 200,
+                 'success' => true,
+                 'message' => 'People you may know retrieved successfully',
+                 'data' => [
+                     'people' => $mappedPeople,
+                     'total_people' => $total,
+                     'sorting' => [
+                         'sort_by' => $sortBy,
+                         'sort_order' => $sortOrder
+                     ],
+                     'pagination' => [
+                         'current_page' => $request->get('page', 1),
+                         'per_page' => $perPage,
+                         'total' => $total,
+                         'last_page' => ceil($total / $perPage),
+                         'from' => $total > 0 ? $offset + 1 : null,
+                         'to' => $total > 0 ? min($offset + $perPage, $total) : null,
+                         'has_more_pages' => $offset + $perPage < $total
+                     ]
+                 ]
+             ], 200);
+
+         } catch (ValidationException $e) {
+             return response()->json([
+                 'status_code' => 422,
+                 'success' => false,
+                 'message' => 'Validation failed',
+                 'errors' => $e->errors()
+             ], 422);
+         } catch (Exception $e) {
+             return response()->json([
+                 'status_code' => 500,
+                 'success' => false,
+                 'message' => 'Failed to retrieve people you may know',
                  'error' => $e->getMessage()
              ], 500);
          }
