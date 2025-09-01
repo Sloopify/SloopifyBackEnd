@@ -5320,8 +5320,8 @@ class PostController extends Controller
 
             // Update the comment
             $updateData = [
-                'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
-                'updated_at' => now()
+                    'mentions' => isset($validatedData['mentions']) ? json_encode($validatedData['mentions']) : null,
+                    'updated_at' => now()
             ];
 
             if (isset($validatedData['comment_text'])) {
@@ -5391,7 +5391,7 @@ class PostController extends Controller
         }
     }
 
-
+  
     public function reactToComment(Request $request)
     {
         try {
@@ -5471,8 +5471,8 @@ class PostController extends Controller
                 // Update existing reaction
                 $existingReaction->update([
                     'reaction_id' => $validatedData['reaction_id'],
-                    'updated_at' => now()
-                ]);
+                        'updated_at' => now()
+                    ]);
 
                 $action = 'updated';
             } else {
@@ -5648,7 +5648,7 @@ class PostController extends Controller
             ], 500);
         }
     }
-   
+
     public function getCommentReplies(Request $request)
     {
         try {
@@ -5876,7 +5876,7 @@ class PostController extends Controller
             ], 500);
         }
     }
-
+   
     public function getCommentReactions(Request $request)
     {
         try {
@@ -6184,8 +6184,8 @@ class PostController extends Controller
                 // Update existing reaction
                 $existingReaction->update([
                     'reaction_id' => $validatedData['reaction_id'],
-                    'updated_at' => now()
-                ]);
+                        'updated_at' => now()
+                    ]);
 
                 $action = 'updated';
             } else {

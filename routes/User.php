@@ -36,6 +36,8 @@ Route::group(['prefix' => 'api/v1'], function () {
 
       Route::post('/logout', 'logout')->middleware('user.auth');
 
+      Route::post('/get-default-images' , 'getDefaultImages');
+
 
      //=================================== User Forget password =============================
 

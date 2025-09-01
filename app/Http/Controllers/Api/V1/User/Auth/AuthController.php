@@ -37,6 +37,19 @@ class AuthController extends Controller
     {
         $phoneDetails = PhoneNumberHelper::parsePhoneNumber($user->phone);
 
+        // Determine default image based on gender
+        $defaultImage = null;
+        if (!$user->img || ($user->provider !== 'google' && !$user->img)) {
+            if ($user->gender === 'male') {
+                $defaultImage = config('app.url') . asset('storage/DefaultUserImage/Men/men.png');
+            } elseif ($user->gender === 'female') {
+                $defaultImage = config('app.url') . asset('storage/DefaultUserImage/Women/women.png');
+            } else {
+                // Default to men image if gender is not specified
+                $defaultImage = config('app.url') . asset('storage/DefaultUserImage/Men/men.png');
+            }
+        }
+
         return [
             'id' => $user->id,
             'first_name' => $user->first_name,
@@ -59,7 +72,7 @@ class AuthController extends Controller
             'country' => $user->country,
             'city' => $user->city,
             'provider' => $user->provider,
-            'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : null),
+            'image' => $user->provider === 'google' ? $user->img : ($user->img ? config('app.url') . asset('storage/' . $user->img) : $defaultImage),
             'cover_photo' => $user->cover_photo ? config('app.url') . asset('storage/' . $user->cover_photo) : null,
             'referral_code' => $user->referral_code,
             'referral_link' => $user->referral_link,
@@ -68,6 +81,37 @@ class AuthController extends Controller
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
         ];
+    }
+ 
+    public function getDefaultImages()
+    {
+        try {
+            $defaultImages = [
+                'men' => [
+                    'image_url' => config('app.url') . asset('storage/DefaultUserImage/Men/men.png'),
+                    'gender' => 'men'
+                ],
+                'women' => [
+                    'image_url' => config('app.url') . asset('storage/DefaultUserImage/Women/women.png'),
+                    'gender' => 'women'
+                ]
+            ];
+
+            return response()->json([
+                'status_code' => 200,
+                'success' => true,
+                'message' => 'Default images retrieved successfully',
+                'data' => $defaultImages
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status_code' => 500,
+                'success' => false,
+                'message' => 'Failed to retrieve default images',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function loginEmail(Request $request)
@@ -453,7 +497,7 @@ class AuthController extends Controller
                     'first_name' => $googleUser->user['given_name'] ?? '',
                     'last_name' => $googleUser->user['family_name'] ?? '',
                     'google_id' => $googleUser->id,
-                    'image' => $googleUser->avatar,
+                    'img' => $googleUser->avatar,
                     'provider' => 'google',
                     'email_verified_at' => now(),
                     'status' => 'active'
