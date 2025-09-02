@@ -6522,7 +6522,9 @@ class PostController extends Controller
                 ->get();
 
             // 1.a) My own posts
-            $myPosts = (clone $visiblePostsQuery)
+            $myPosts = Post::with(['user', 'media', 'poll', 'personalOccasion'])
+                ->approved()
+                ->notExpired()
                 ->where('user_id', $user->id)
                 ->inRandomOrder()
                 ->take($perPage * 2)
