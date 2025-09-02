@@ -2707,7 +2707,7 @@ class PostController extends Controller
             
             // Find the post and ensure it's visible to the user
             $post = Post::approved()
-                ->visibleTo($user->id)
+                ->visibleTo($user)
                 ->findOrFail($validatedData['post_id']);
 
             DB::beginTransaction();
@@ -3070,7 +3070,7 @@ class PostController extends Controller
             
             // Find the post and ensure it's from a friend and visible to the user
             $post = Post::approved()
-                ->visibleTo($user->id)
+                ->visibleTo($user)
                 ->findOrFail($validatedData['post_id']);
 
             // Ensure the post is from a friend (not the user's own post)
@@ -3280,7 +3280,7 @@ class PostController extends Controller
             
             // Find the post and ensure it's from a friend
             $post = Post::approved()
-                ->visibleTo($user->id)
+                ->visibleTo($user)
                 ->findOrFail($validatedData['post_id']);
 
             // Ensure the post is from a friend (not the user's own post)
@@ -3989,7 +3989,7 @@ class PostController extends Controller
             ]);
 
             $user = Auth::guard('user')->user();
-            $post = Post::approved()->visibleTo($user->id)->findOrFail($validatedData['post_id']);
+            $post = Post::approved()->visibleTo($user)->findOrFail($validatedData['post_id']);
 
             // Ensure the post is not from the user themselves
             if ($post->user_id === $user->id) {
@@ -4081,7 +4081,7 @@ class PostController extends Controller
             ]);
 
             $user = Auth::guard('user')->user();
-            $post = Post::approved()->visibleTo($user->id)->findOrFail($validatedData['post_id']);
+            $post = Post::approved()->visibleTo($user)->findOrFail($validatedData['post_id']);
 
             // Ensure the post is not from the user themselves
             if ($post->user_id === $user->id) {
@@ -6268,7 +6268,7 @@ class PostController extends Controller
             $post = Post::with(['user', 'media', 'poll', 'personalOccasion'])
                 ->approved()
                 ->notExpired()
-                ->visibleTo($user->id)
+                ->visibleTo($user)
                 ->find($validatedData['post_id']);
 
             if (!$post) {
@@ -6298,8 +6298,8 @@ class PostController extends Controller
                 // Update existing reaction
                 $existingReaction->update([
                     'reaction_id' => $validatedData['reaction_id'],
-                    'updated_at' => now()
-                ]);
+                        'updated_at' => now()
+                    ]);
 
                 $action = 'updated';
             } else {
@@ -6399,7 +6399,7 @@ class PostController extends Controller
             $post = Post::with(['user', 'media', 'poll', 'personalOccasion'])
                 ->approved()
                 ->notExpired()
-                ->visibleTo($user->id)
+                ->visibleTo($user)
                 ->find($validatedData['post_id']);
 
             if (!$post) {
@@ -6512,11 +6512,18 @@ class PostController extends Controller
             $visiblePostsQuery = Post::with(['user', 'media', 'poll', 'personalOccasion'])
                 ->approved()
                 ->notExpired()
-                ->visibleTo($user->id);
+                ->visibleTo($user);
 
             // 1) Direct friends' posts
             $friendsPosts = (clone $visiblePostsQuery)
                 ->whereIn('user_id', $friendIds)
+                ->inRandomOrder()
+                ->take($perPage * 2)
+                ->get();
+
+            // 1.a) My own posts
+            $myPosts = (clone $visiblePostsQuery)
+                ->where('user_id', $user->id)
                 ->inRandomOrder()
                 ->take($perPage * 2)
                 ->get();
@@ -6589,7 +6596,8 @@ class PostController extends Controller
                 ->get();
 
             // Merge pools and de-duplicate by id
-            $pool = $friendsPosts
+            $pool = $myPosts
+                ->merge($friendsPosts)
                 ->merge($friendInteractedPosts)
                 ->merge($suggestedPosts)
                 ->merge($similarPosts)
