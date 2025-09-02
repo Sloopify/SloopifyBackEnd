@@ -703,11 +703,11 @@ class StoryController extends Controller
             $story->drawing_elements = isset($validatedData['drawing_elements']) ? json_encode($this->convertNumericValuesToDouble($validatedData['drawing_elements']), JSON_PRESERVE_ZERO_FRACTION) : null;
             $story->gif_element = isset($validatedData['gif_element']) ? json_encode($this->convertNumericValuesToDouble($validatedData['gif_element']), JSON_PRESERVE_ZERO_FRACTION) : null;
             $story->is_video_muted = $validatedData['is_video_muted'] ?? false;
-            $story->expires_at = Carbon::now()->addHours(24);
             $story->status = 'active';
             $story->save();
 
             // Generate and save share URL after the story is created
+            $story->expires_at = Carbon::parse($story->created_at)->addHours(24);
             $story->share_url = $this->generateShareUrl($story->id);
             $story->save();
 

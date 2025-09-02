@@ -11,6 +11,7 @@ class Story extends Model
 {
     use HasFactory, SoftDeletes;
 
+    protected $table = 'stories';
     protected $fillable = [
         'user_id',
         'privacy',

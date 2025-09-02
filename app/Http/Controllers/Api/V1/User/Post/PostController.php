@@ -211,6 +211,119 @@ class PostController extends Controller
         return $url;
     }
 
+    /**
+     * Build complete post data with same structure as getFeed function
+     * 
+     * @param Post $post
+     * @param User $user
+     * @return array
+     */
+    private function buildCompletePostData($post, $user)
+    {
+        // Get friend IDs for this user
+        $friendships = Friendship::where(function($q) use ($user) {
+            $q->where('user_id', $user->id)
+              ->orWhere('friend_id', $user->id);
+        })
+        ->where('status', 'accepted')
+        ->get();
+
+        $friendIds = $friendships->map(function($f) use ($user) {
+            return $f->user_id == $user->id ? $f->friend_id : $f->user_id;
+        })->unique()->values();
+
+        // Get comment count
+        $commentCount = \DB::table('post_comments')
+            ->where('post_id', $post->id)
+            ->whereNull('parent_comment_id')
+            ->where('is_deleted', false)
+            ->count();
+
+        // Get post reactions data
+        $postReactions = PostReaction::where('post_id', $post->id)
+            ->with(['reaction', 'user'])
+            ->get();
+
+        $totalPostReactions = $postReactions->count();
+
+        // Get user's reaction for this post
+        $userReaction = PostReaction::where('user_id', $user->id)
+            ->where('post_id', $post->id)
+            ->with('reaction')
+            ->first();
+
+        // Check if post is saved
+        $isSaved = \DB::table('saved_posts')
+            ->where('user_id', $user->id)
+            ->where('post_id', $post->id)
+            ->exists();
+
+        // Build post data
+        $data = $post->toArray();
+        $data['comments_count'] = $commentCount;
+        $data['reactions_count'] = $totalPostReactions;
+        $data['is_saved'] = $isSaved;
+        $data['is_user_friend'] = $friendIds->contains($post->user_id);
+
+        // Map user data
+        $data['user'] = $this->mapUsersDetails(collect([$post->user]))->first();
+
+        // Map mentions friends to full user data
+        if (isset($data['mentions']['friends']) && !empty($data['mentions']['friends'])) {
+            $mentionedUserIds = $data['mentions']['friends'];
+            $mentionedUsers = User::whereIn('id', $mentionedUserIds)->get();
+            $data['mentions']['friends'] = $this->mapUsersDetails($mentionedUsers);
+        }
+
+        // Map mentions place to full place data
+        if (isset($data['mentions']['place']) && !empty($data['mentions']['place'])) {
+            $userPlace = UserPlace::find($data['mentions']['place']);
+            if ($userPlace) {
+                $data['mentions']['place'] = $this->mapUserPlaces($userPlace);
+            }
+        }
+
+        // Check if mentions object is empty and set to null
+        if (isset($data['mentions']) && empty(array_filter($data['mentions']))) {
+            $data['mentions'] = null;
+        }
+
+        // Group reactions by type and count them
+        $reactionCounts = $postReactions->groupBy('reaction_id')
+            ->map(function ($reactions) {
+                return [
+                    'reaction' => $reactions->first()->reaction,
+                    'count' => $reactions->count(),
+                    'users' => $reactions->pluck('user')
+                ];
+            });
+
+        // Add post reactions data
+        $data['post_reactions'] = [
+            'user_reaction' => $userReaction ? [
+                'id' => $userReaction->reaction->id,
+                'name' => $userReaction->reaction->name,
+                'content' => $userReaction->reaction->content,
+                'image' => $this->formatReactionUrl($userReaction->reaction->image_url),
+                'video' => $this->formatReactionUrl($userReaction->reaction->video_url)
+            ] : null,
+            'reactions' => $reactionCounts->map(function ($item) {
+                return [
+                    'id' => $item['reaction']->id,
+                    'name' => $item['reaction']->name,
+                    'content' => $item['reaction']->content,
+                    'image' => $this->formatReactionUrl($item['reaction']->image_url),
+                    'video' => $this->formatReactionUrl($item['reaction']->video_url),
+                    'count' => $item['count'],
+                    'users' => $this->mapUsersDetails($item['users'])
+                ];
+            })->values(),
+            'total_reactions' => $totalPostReactions
+        ];
+
+        return $data;
+    }
+
     public function createPost(Request $request)
     {
         try {
@@ -2594,7 +2707,7 @@ class PostController extends Controller
             
             // Find the post and ensure it's visible to the user
             $post = Post::approved()
-                ->visibleTo($user->id)
+                ->visibleTo($user)
                 ->findOrFail($validatedData['post_id']);
 
             DB::beginTransaction();
@@ -2957,7 +3070,7 @@ class PostController extends Controller
             
             // Find the post and ensure it's from a friend and visible to the user
             $post = Post::approved()
-                ->visibleTo($user->id)
+                ->visibleTo($user)
                 ->findOrFail($validatedData['post_id']);
 
             // Ensure the post is from a friend (not the user's own post)
@@ -3167,7 +3280,7 @@ class PostController extends Controller
             
             // Find the post and ensure it's from a friend
             $post = Post::approved()
-                ->visibleTo($user->id)
+                ->visibleTo($user)
                 ->findOrFail($validatedData['post_id']);
 
             // Ensure the post is from a friend (not the user's own post)
@@ -3876,7 +3989,7 @@ class PostController extends Controller
             ]);
 
             $user = Auth::guard('user')->user();
-            $post = Post::approved()->visibleTo($user->id)->findOrFail($validatedData['post_id']);
+            $post = Post::approved()->visibleTo($user)->findOrFail($validatedData['post_id']);
 
             // Ensure the post is not from the user themselves
             if ($post->user_id === $user->id) {
@@ -3968,7 +4081,7 @@ class PostController extends Controller
             ]);
 
             $user = Auth::guard('user')->user();
-            $post = Post::approved()->visibleTo($user->id)->findOrFail($validatedData['post_id']);
+            $post = Post::approved()->visibleTo($user)->findOrFail($validatedData['post_id']);
 
             // Ensure the post is not from the user themselves
             if ($post->user_id === $user->id) {
@@ -6152,10 +6265,11 @@ class PostController extends Controller
             DB::beginTransaction();
 
             // Check if post exists and is approved
-            $post = DB::table('posts')
-                ->where('id', $validatedData['post_id'])
-                ->where('status', 'approved')
-                ->first();
+            $post = Post::with(['user', 'media', 'poll', 'personalOccasion'])
+                ->approved()
+                ->notExpired()
+                ->visibleTo($user)
+                ->find($validatedData['post_id']);
 
             if (!$post) {
                 return response()->json([
@@ -6219,12 +6333,15 @@ class PostController extends Controller
 
             DB::commit();
 
+            // Build complete post data with same structure as getFeed
+            $postData = $this->buildCompletePostData($post, $user);
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => "Reaction {$action} successfully",
                 'data' => [
-                    'post_id' => $validatedData['post_id'],
+                    'post' => $postData,
                     'user_reaction' => $userReaction ? [
                         'id' => $userReaction->reaction->id,
                         'name' => $userReaction->reaction->name,
@@ -6279,10 +6396,11 @@ class PostController extends Controller
             DB::beginTransaction();
 
             // Check if post exists
-            $post = DB::table('posts')
-                ->where('id', $validatedData['post_id'])
-                ->where('status', 'approved')
-                ->first();
+            $post = Post::with(['user', 'media', 'poll', 'personalOccasion'])
+                ->approved()
+                ->notExpired()
+                ->visibleTo($user)
+                ->find($validatedData['post_id']);
 
             if (!$post) {
                 return response()->json([
@@ -6321,12 +6439,15 @@ class PostController extends Controller
 
             DB::commit();
 
+            // Build complete post data with same structure as getFeed
+            $postData = $this->buildCompletePostData($post, $user);
+
             return response()->json([
                 'status_code' => 200,
                 'success' => true,
                 'message' => 'Reaction removed successfully',
                 'data' => [
-                    'post_id' => $validatedData['post_id'],
+                    'post' => $postData,
                     'user_reaction' => null,
                     'reaction_counts' => $reactionCounts->map(function ($item) {
                         return [
@@ -6391,11 +6512,18 @@ class PostController extends Controller
             $visiblePostsQuery = Post::with(['user', 'media', 'poll', 'personalOccasion'])
                 ->approved()
                 ->notExpired()
-                ->visibleTo($user->id);
+                ->visibleTo($user);
 
             // 1) Direct friends' posts
             $friendsPosts = (clone $visiblePostsQuery)
                 ->whereIn('user_id', $friendIds)
+                ->inRandomOrder()
+                ->take($perPage * 2)
+                ->get();
+
+            // 1.a) My own posts
+            $myPosts = (clone $visiblePostsQuery)
+                ->where('user_id', $user->id)
                 ->inRandomOrder()
                 ->take($perPage * 2)
                 ->get();
@@ -6468,7 +6596,8 @@ class PostController extends Controller
                 ->get();
 
             // Merge pools and de-duplicate by id
-            $pool = $friendsPosts
+            $pool = $myPosts
+                ->merge($friendsPosts)
                 ->merge($friendInteractedPosts)
                 ->merge($suggestedPosts)
                 ->merge($similarPosts)
