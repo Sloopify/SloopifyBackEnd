@@ -211,13 +211,7 @@ class PostController extends Controller
         return $url;
     }
 
-    /**
-     * Build complete post data with same structure as getFeed function
-     * 
-     * @param Post $post
-     * @param User $user
-     * @return array
-     */
+  
     private function buildCompletePostData($post, $user)
     {
         // Get friend IDs for this user
