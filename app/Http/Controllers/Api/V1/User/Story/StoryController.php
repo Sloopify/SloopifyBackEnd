@@ -122,6 +122,42 @@ class StoryController extends Controller
         return false;
     }
 
+    private function isStoryVisibleToUser($story, $user)
+    {
+        // User's own stories are always visible
+        if ($story->user_id == $user->id) {
+            return true;
+        }
+        
+        // Public stories are visible to everyone
+        if ($story->privacy === 'public') {
+            return true;
+        }
+        
+        // Friends stories - check if users are friends
+        if ($story->privacy === 'friends') {
+            return $user->isFriendsWith($story->user_id);
+        }
+        
+        // Specific friends stories - check if user is in the list
+        if ($story->privacy === 'specific_friends') {
+            $specificFriends = is_string($story->specific_friends) 
+                ? json_decode($story->specific_friends, true) 
+                : $story->specific_friends;
+            return is_array($specificFriends) && in_array($user->id, $specificFriends);
+        }
+        
+        // Friend except stories - check if user is not in the exception list
+        if ($story->privacy === 'friend_except') {
+            $friendExcept = is_string($story->friend_except) 
+                ? json_decode($story->friend_except, true) 
+                : $story->friend_except;
+            return !is_array($friendExcept) || !in_array($user->id, $friendExcept);
+        }
+        
+        return false;
+    }
+
     private function mapStoryForMobile($story)
     {
         // Simplified story data for mobile app
@@ -288,10 +324,7 @@ class StoryController extends Controller
              }),
              'views_count' => $story->views_count,
              'replies_count' => $story->replies_count,
-            // Owner should always be considered as having viewed their own story
-            'has_viewed' => ($currentUser && $story->user_id === $currentUser->id)
-                ? true
-                : ($currentUser ? $story->hasBeenViewedBy($currentUser->id) : false),
+            'has_viewed' => $currentUser ? $story->hasBeenViewedBy($currentUser->id) : false,
              'has_voted' => $currentUser ? $story->hasVotedBy($currentUser->id) : false,
              'poll_results' => $story->poll_results,
              'share_url' => $story->share_url,
@@ -1533,21 +1566,23 @@ class StoryController extends Controller
                 ], 400);
             }
 
-             // Check if users are friends (for privacy)
-             if (!$currentUser->isFriendsWith($targetUserId)) {
-                 return response()->json([
-                     'status_code' => 403,
-                     'success' => false,
-                     'message' => 'You can only view stories from your friends'
-                 ], 403);
-             }
+            // Check if users are friends (for privacy) - allow public stories even if not friends
+            $isFriend = $currentUser->isFriendsWith($targetUserId);
 
-             $stories = Story::with(['user', 'media', 'views'])
-                 ->where('user_id', $targetUserId)
-                 ->active()
-                 ->visibleTo($currentUser->id)
-                 ->orderBy('created_at', 'asc') // Oldest to newest
-                 ->paginate($perPage);
+            $query = Story::with(['user', 'media', 'views'])
+                ->where('user_id', $targetUserId)
+                ->active();
+            
+            // If not friends, only show public stories
+            if (!$isFriend) {
+                $query->where('privacy', 'public');
+            } else {
+                // If friends, use the normal visibility scope
+                $query->visibleTo($currentUser->id);
+            }
+            
+            $stories = $query->orderBy('created_at', 'asc') // Oldest to newest
+                ->paginate($perPage);
 
              $mappedStories = $stories->getCollection()->map(function ($story) use ($currentUser) {
                  $storyData = $this->mapStory($story, $currentUser);
@@ -1676,19 +1711,35 @@ class StoryController extends Controller
 
              $user = Auth::guard('user')->user();
              
-             $story = Story::with(['user', 'media', 'views', 'replies'])
-                 ->active()
-                 ->visibleTo($user->id)
-                 ->findOrFail($validatedData['story_id']);
+            // Check if user is trying to view their own story
+            $isOwnStory = false;
+            $story = Story::with(['user', 'media', 'views', 'replies'])
+                ->where('id', $validatedData['story_id'])
+                ->first();
+            
+            if (!$story) {
+                throw new \Exception('Story not found');
+            }
+            
+            if ($story->user_id == $user->id) {
+                $isOwnStory = true;
+                // For own stories, only exclude deleted ones
+                if ($story->status === 'deleted') {
+                    throw new \Exception('Story not found');
+                }
+            } else {
+                // For other users' stories, check if it's active and visible
+                if ($story->status !== 'active' || $story->expires_at <= now()) {
+                    throw new \Exception('Story not found or not accessible');
+                }
+                
+                // Check visibility permissions
+                if (!$this->isStoryVisibleToUser($story, $user)) {
+                    throw new \Exception('Story not found or not accessible');
+                }
+            }
  
-             // Check if user is trying to view their own story
-             if ($story->user_id == $user->id) {
-                 return response()->json([
-                     'status_code' => 400,
-                     'success' => false,
-                     'message' => 'You cannot view your own story'
-                 ], 400);
-             }
+            // Allow users to view their own stories
 
              DB::beginTransaction();
  
@@ -1702,6 +1753,9 @@ class StoryController extends Controller
              }
  
              DB::commit();
+
+             // Refresh the story to include the new view relationship
+             $story->load(['user', 'media', 'views', 'replies', 'pollVotes']);
 
                          $responseData = [
                  'status_code' => 200,
@@ -1742,8 +1796,21 @@ class StoryController extends Controller
             
             $story = Story::with(['user', 'media', 'views', 'replies', 'pollVotes'])
                 ->where('user_id', $user->id)
-                ->active()
+                ->where('status', '!=', 'deleted')
                 ->findOrFail($validatedData['story_id']);
+
+            DB::beginTransaction();
+
+            // Record view if not already viewed by the owner
+            if (!$story->hasBeenViewedBy($user->id)) {
+                StoryView::create([
+                    'story_id' => $story->id,
+                    'viewer_id' => $user->id,
+                    'viewed_at' => now()
+                ]);
+            }
+
+            DB::commit();
 
             $responseData = [
                 'status_code' => 200,
@@ -1755,6 +1822,7 @@ class StoryController extends Controller
             return response()->json($responseData, 200, [], JSON_PRESERVE_ZERO_FRACTION);
 
         } catch (ValidationException $e) {
+            DB::rollBack();
             return response()->json([
                 'status_code' => 422,
                 'success' => false,
@@ -1762,6 +1830,7 @@ class StoryController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status_code' => 404,
                 'success' => false,
