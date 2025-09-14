@@ -6554,8 +6554,11 @@ class PostController extends Controller
             $gender = $user->gender;
             $age = $user->age;
 
+            // Create a collection of user IDs to exclude (friends + current user)
+            $excludeUserIds = collect($friendIds->toArray())->push($user->id);
+            
             $suggestedQuery = (clone $visiblePostsQuery)
-                ->whereNotIn('user_id', $friendIds->push($user->id))
+                ->whereNotIn('user_id', $excludeUserIds)
                 ->where('privacy', 'public');
 
             // Boost posts by users with overlapping interests
