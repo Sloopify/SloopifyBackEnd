@@ -262,6 +262,11 @@ class PostController extends Controller
         // Map user data
         $data['user'] = $this->mapUsersDetails(collect([$post->user]))->first();
 
+        // Decode mentions JSON if it's a string
+        if (isset($data['mentions']) && is_string($data['mentions'])) {
+            $data['mentions'] = json_decode($data['mentions'], true) ?: [];
+        }
+
         // Map mentions friends to full user data
         if (isset($data['mentions']['friends']) && !empty($data['mentions']['friends'])) {
             $mentionedUserIds = $data['mentions']['friends'];
@@ -6664,6 +6669,11 @@ class PostController extends Controller
                 $data['is_user_friend'] = $friendIds->contains($post->user_id);
                 // Map user data using mapUsersDetails function
                 $data['user'] = $this->mapUsersDetails(collect([$post->user]))->first();
+                
+                // Decode mentions JSON if it's a string
+                if (isset($data['mentions']) && is_string($data['mentions'])) {
+                    $data['mentions'] = json_decode($data['mentions'], true) ?: [];
+                }
                 
                 // Map mentions friends to full user data
                 if (isset($data['mentions']['friends']) && !empty($data['mentions']['friends'])) {
