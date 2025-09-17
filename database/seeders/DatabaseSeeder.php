@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
             UserPlaceSeeder::class,
             StoryAudioSeeder::class,
             ReactionSeeder::class,
+            DailyStatusSeeder::class,
             
         ]);
     }
